@@ -1,4 +1,6 @@
-import { mountGame } from './client/index.tsx'
+import { createElement } from 'react'
+import { createRoot } from 'react-dom/client'
+import { BreakroomApp } from './breakroom/BreakroomApp.tsx'
 import type { TaskListSnapshot, TaskListSource } from './ui/task-status.ts'
 
 const TASK_ID = 'preview-dsh-task'
@@ -57,14 +59,15 @@ if (!(previewRoot instanceof HTMLElement)) {
 }
 
 const taskFeed = createPreviewTaskSource()
-const unmount = mountGame(previewRoot, {
+const root = createRoot(previewRoot)
+root.render(createElement(BreakroomApp, {
   initiallyOpen: true,
   preview: true,
   taskSource: taskFeed.source,
-})
+}))
 
 window.addEventListener('beforeunload', () => {
   taskFeed.dispose()
-  unmount()
+  root.unmount()
 }, { once: true })
 

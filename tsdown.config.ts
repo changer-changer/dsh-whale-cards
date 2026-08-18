@@ -46,6 +46,7 @@ export default defineConfig([
     },
     outputOptions: {
       entryFileNames: 'client.js',
+      inlineDynamicImports: true,
       banner: `window.__ModuleLoader__.load({ id: ${JSON.stringify(PACKAGE_ID)}, factory: (require) => {`,
       intro: 'var module = { exports: {} }; var exports = module.exports;',
       footer: 'return module.exports; } });',

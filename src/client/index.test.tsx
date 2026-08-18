@@ -14,15 +14,15 @@ import {
 
 let renderedCompanion: CompanionPort | undefined
 
-vi.mock('../ui/GameApp.tsx', () => ({
-  GameApp: ({ companion, initiallyOpen, preview, taskSource }: MountOptions): ReactNode => {
+vi.mock('../breakroom/BreakroomApp.tsx', () => ({
+  BreakroomApp: ({ companion, initiallyOpen, preview, taskSource }: MountOptions): ReactNode => {
     renderedCompanion = companion
     return (
       <div
         data-current-task={taskSource?.getSnapshot().current ?? ''}
         data-initially-open={String(initiallyOpen)}
         data-preview={String(preview)}
-        data-testid="game-app"
+data-testid="breakroom-app"
       />
     )
   },
@@ -152,10 +152,11 @@ describe('client plugin lifecycle', () => {
     const host = document.getElementById(HOST_ID)
     const mount = host?.shadowRoot?.getElementById(MOUNT_ID)
     const boundaryStyles = host?.shadowRoot?.querySelector('style')
-    const app = mount?.querySelector<HTMLElement>('[data-testid="game-app"]')
+    const app = mount?.querySelector<HTMLElement>('[data-testid="breakroom-app"]')
     expect(host?.getAttribute('data-plugin')).toBe('dsh-whale-cards')
     expect(host?.shadowRoot).not.toBeNull()
     expect(app?.dataset.currentTask).toBe('task-1')
+    expect(renderedCompanion).toBeDefined()
     expect(app?.dataset.initiallyOpen).toBe('false')
     expect(app?.dataset.preview).toBe('false')
     expect(boundaryStyles?.textContent).toContain('.dwc-launcher')

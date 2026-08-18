@@ -19,6 +19,8 @@
     "lib",
     "cordis.patch.yml",
     "docs/art-generation.md",
+    "docs/game-authoring.md",
+    "docs/game-review-checklist.md",
     "README.md",
     "THIRD_PARTY_NOTICES.md",
     "LICENSE"

@@ -2,7 +2,7 @@ import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import { createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import type { CompanionPort } from '../companion/core.ts'
-import { GameApp } from '../ui/GameApp.tsx'
+import { BreakroomApp } from '../breakroom/BreakroomApp.tsx'
 import type { TaskListSnapshot, TaskListSource, TaskSummary } from '../ui/task-status.ts'
 import {
   mountCompanionBridge,
@@ -69,7 +69,7 @@ export function mountGame(parent: HTMLElement, options: MountOptions = {}): Clie
   parent.append(host)
 
   const root: Root = createRoot(mount)
-  root.render(createElement(GameApp, options))
+  root.render(createElement(BreakroomApp, options))
 
   return () => {
     root.unmount()
