@@ -38,7 +38,7 @@ dsh web
 
 ### 从预构建 tarball 安装
 
-可以直接从 [GitHub Releases](https://github.com/changer-changer/dsh-whale-cards/releases) 下载已验证的 `dsh-whale-cards-0.1.0.tgz`，也可以自行构建：
+可以直接从 [GitHub Releases](https://github.com/changer-changer/dsh-whale-cards/releases) 下载已验证的 `dsh-whale-cards-0.1.1.tgz`，也可以自行构建：
 
 发布者先执行：
 
@@ -53,7 +53,7 @@ npm pack
 用户安装生成的 tarball：
 
 ```sh
-dsh plugin --profile web add ./dsh-whale-cards-0.1.0.tgz
+dsh plugin --profile web add ./dsh-whale-cards-0.1.1.tgz
 dsh --profile web --dump-config
 dsh web
 ```

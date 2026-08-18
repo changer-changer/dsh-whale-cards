@@ -40,8 +40,9 @@ export const GAME_STYLES = String.raw`
 .dwc-launcher {
   position: fixed;
   z-index: 1100;
+  top: max(5.25rem, calc(env(safe-area-inset-top) + 4.25rem));
   right: max(1.25rem, env(safe-area-inset-right));
-  bottom: max(1.25rem, env(safe-area-inset-bottom));
+  bottom: auto;
   width: 12.4rem;
   min-height: 4.2rem;
   padding: 0.42rem 0.72rem 0.42rem 4.4rem;
@@ -1648,6 +1649,36 @@ button.dwc-card--selected:hover:not(:disabled) {
 }
 
 @media (max-width: 760px) {
+  .dwc-launcher {
+    top: max(4.25rem, calc(env(safe-area-inset-top) + 3.5rem));
+    right: max(0.75rem, env(safe-area-inset-right));
+    width: 3.75rem;
+    min-height: 3.75rem;
+    padding: 0;
+    border-radius: 50%;
+  }
+
+  .dwc-launcher-art {
+    width: 100%;
+    background-position: 63% 36%;
+  }
+
+  .dwc-launcher::after {
+    background: linear-gradient(180deg, transparent 45%, rgb(11 27 36 / 74%));
+  }
+
+  .dwc-launcher-copy {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    border: 0;
+    white-space: nowrap;
+  }
+
   .dwc-overlay {
     padding: 0;
   }

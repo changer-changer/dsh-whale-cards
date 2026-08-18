@@ -1,6 +1,6 @@
 {
   "name": "dsh-whale-cards",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "A calm, resumable Gin Rummy break with an original whale companion inside DSH Web.",
   "type": "module",
   "engines": {
@@ -57,6 +57,7 @@
     "@types/react": "~18.3.1",
     "@types/react-dom": "~18.3.0",
     "jsdom": "^29.1.1",
+    "postcss": "^8.5.26",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "tsdown": "^0.22.2",
