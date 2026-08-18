@@ -16,6 +16,7 @@ const state: CompanionSnapshot = {
 describe('companion Client bridge', () => {
   it('mounts the strict contribution and exposes ordinary CompanionPort promises', async () => {
     const dispose = vi.fn(async () => undefined)
+    const disposeNamespaceFiber = vi.fn(async () => undefined)
     const snapshot = vi.fn(async () => ({ ok: true as const, value: state }))
     const remote = {
       $mount: vi.fn(async () => dispose),
@@ -31,13 +32,22 @@ describe('companion Client bridge', () => {
         })),
       },
     }
+    const context = {
+      remote,
+      inject: vi.fn((deps: string[], callback: (ctx: never) => void) => {
+        expect(deps).toEqual(['remote.whaleCompanion'])
+        callback(context as never)
+        return Object.assign(Promise.resolve(), { dispose: disposeNamespaceFiber })
+      }),
+    }
 
-    const bridge = await mountCompanionBridge(remote)
+    const bridge = await mountCompanionBridge(context)
 
     await expect(bridge.port.snapshot()).resolves.toEqual(state)
     await expect(bridge.port.chat({ text: '在吗？' })).rejects.toThrow('模型暂时离线')
     expect(remote.$mount).toHaveBeenCalledTimes(1)
     await bridge.dispose()
+    expect(disposeNamespaceFiber).toHaveBeenCalledTimes(1)
     expect(dispose).toHaveBeenCalledTimes(1)
   })
 })

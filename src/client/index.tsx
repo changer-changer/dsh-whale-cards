@@ -6,7 +6,7 @@ import { GameApp } from '../ui/GameApp.tsx'
 import type { TaskListSnapshot, TaskListSource, TaskSummary } from '../ui/task-status.ts'
 import {
   mountCompanionBridge,
-  type CompanionRemoteMount,
+  type CompanionBridgeContext,
   type MountedCompanionBridge,
 } from './companion-bridge.ts'
 
@@ -153,8 +153,7 @@ function deferredCompanionPort(bridge: Promise<BridgeOutcome>): CompanionPort {
 export function apply(ctx: ClientContext): void {
   ctx.effect(
     () => {
-      const remote = (ctx as unknown as { readonly remote: CompanionRemoteMount }).remote
-      const bridge: Promise<BridgeOutcome> = mountCompanionBridge(remote).then(
+      const bridge: Promise<BridgeOutcome> = mountCompanionBridge(ctx as unknown as CompanionBridgeContext).then(
         (value) => ({ ok: true, value }),
         (error: unknown) => ({ ok: false, error }),
       )

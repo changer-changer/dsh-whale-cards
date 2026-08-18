@@ -16,6 +16,18 @@ export interface CompanionRemoteMount {
   $mount(contribution: TypertRemoteContribution): Promise<TypertDisposer>
 }
 
+export interface CompanionBridgeFiber extends PromiseLike<unknown> {
+  dispose(): void | Promise<void>
+}
+
+export interface CompanionBridgeContext {
+  readonly remote: CompanionRemoteMount
+  inject(
+    deps: string[],
+    callback: (ctx: CompanionBridgeContext) => void,
+  ): CompanionBridgeFiber
+}
+
 export interface MountedCompanionBridge {
   readonly port: CompanionPort
   readonly dispose: TypertDisposer
@@ -38,11 +50,8 @@ function unwrap<T>(result: RemoteResult<T>): T {
   throw new CompanionRemoteError(result.error)
 }
 
-/** Mount the strict Remote contribution and present the UI's stable facade. */
-export async function mountCompanionBridge(remote: CompanionRemoteMount): Promise<MountedCompanionBridge> {
-  const dispose = await remote.$mount(TYPERT_REMOTE)
-  const namespace = remote.whaleCompanion
-  const port: CompanionPort = {
+function companionPort(namespace: WhaleCompanionRemoteNamespace): CompanionPort {
+  return {
     snapshot: async () => unwrap(await namespace.snapshot()),
     listModels: async () => unwrap(await namespace.listModels()),
     selectModel: async (selection) => unwrap(await namespace.selectModel(selection)),
@@ -50,5 +59,37 @@ export async function mountCompanionBridge(remote: CompanionRemoteMount): Promis
     forget: async (request) => unwrap(await namespace.forget(request)),
     chat: async (request, signal) => unwrap(await namespace.chat(request, signal)),
   }
-  return { port, dispose }
+}
+
+/** Mount the strict contribution, then consume its namespace in an explicitly injected child fiber. */
+export async function mountCompanionBridge(ctx: CompanionBridgeContext): Promise<MountedCompanionBridge> {
+  const disposeRemote = await ctx.remote.$mount(TYPERT_REMOTE)
+  let namespaceFiber: CompanionBridgeFiber | undefined
+  let port: CompanionPort | undefined
+  try {
+    namespaceFiber = ctx.inject(['remote.whaleCompanion'], (remoteCtx) => {
+      port = companionPort(remoteCtx.remote.whaleCompanion)
+    })
+    await namespaceFiber
+  } catch (error) {
+    await namespaceFiber?.dispose()
+    await disposeRemote()
+    throw error
+  }
+  if (port === undefined) {
+    await namespaceFiber.dispose()
+    await disposeRemote()
+    throw new Error('companion Remote namespace did not become available')
+  }
+
+  let disposed = false
+  return {
+    port,
+    dispose: async () => {
+      if (disposed) return
+      disposed = true
+      await namespaceFiber.dispose()
+      await disposeRemote()
+    },
+  }
 }
