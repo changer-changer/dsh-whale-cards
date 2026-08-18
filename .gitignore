@@ -1,0 +1,6 @@
+node_modules/
+lib/
+coverage/
+src/client/generated/
+*.tgz
+.DS_Store
