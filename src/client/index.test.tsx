@@ -6,6 +6,7 @@ import {
   HOST_ID,
   inject,
   MOUNT_ID,
+  projectTaskListSnapshot,
   type ClientCleanup,
   type MountOptions,
 } from './index.tsx'
@@ -47,6 +48,10 @@ function createHarness(): TestHarness {
     sessions: {
       list: taskSource,
     },
+    remote: {
+      $mount: async () => async () => undefined,
+      whaleCompanion: {},
+    },
   } as unknown as Parameters<typeof apply>[0]
 
   return { cleanups, context, labels }
@@ -57,8 +62,37 @@ afterEach(() => {
 })
 
 describe('client plugin lifecycle', () => {
-  it('declares the sessions service dependency', () => {
-    expect(inject).toEqual(['sessions'])
+  it('declares the sessions, connection, and strict Remote service dependencies', () => {
+    expect(inject).toEqual(['sessions', 'connection', 'remote'])
+  })
+
+  it('projects only public task status fields and never task body or source code', () => {
+    const projected = projectTaskListSnapshot({
+      current: 'task-1',
+      byId: {
+        'task-1': {
+          displayTitle: '修复牌桌交互',
+          running: true,
+          pendingInteraction: 'question',
+          completed: false,
+          prompt: 'private task body',
+          cwd: '/private/project',
+          sourceCode: 'const secret = true',
+        },
+      },
+    })
+
+    expect(projected).toEqual({
+      current: 'task-1',
+      byId: {
+        'task-1': {
+          displayTitle: '修复牌桌交互',
+          running: true,
+          pendingInteraction: 'question',
+          completed: false,
+        },
+      },
+    })
   })
 
   it('mounts GameApp in a shadow root and removes it on cleanup', () => {

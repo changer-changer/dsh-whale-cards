@@ -2,8 +2,10 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 export interface TaskSummary {
   readonly completed?: boolean
+  readonly displayTitle?: string
   readonly pendingInteraction?: unknown
   readonly running?: boolean
+  readonly title?: string
 }
 
 export interface TaskListSnapshot {

@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { playAiTurn } from '../game/ai'
-import { createMatch, discardCard, drawCard, passAtWall, startNextHand } from '../game/engine'
+import { chooseAiDiscard, chooseAiDraw, type AiView } from '../game/ai'
+import {
+  createMatch,
+  discardCard,
+  drawCard,
+  legalKnockDiscards,
+  passAtWall,
+  startNextHand,
+} from '../game/engine'
 import {
   DEFAULT_APP_STATE,
   loadAppState,
@@ -48,6 +55,18 @@ function resultDialogue(match: MatchState): DialogueEvent | null {
   if (match.phase !== 'match_over') return null
   if (match.scores.human === match.scores.lanyin) return 'match_draw'
   return match.scores.human > match.scores.lanyin ? 'match_win' : 'match_loss'
+}
+
+function lanyinView(match: MatchState): AiView {
+  return {
+    hand: match.hands.lanyin,
+    history: match.history,
+    rules: match.rules,
+    stockCount: match.stock.length,
+    topDiscard: match.discard.at(-1),
+    drawnCardId: match.drawnCardId,
+    drawSource: match.drawSource,
+  }
 }
 
 export interface GameController {
@@ -123,7 +142,10 @@ export function useGameController(
 
   useEffect(() => {
     const match = app.match
-    if (!app.panelOpen || !documentVisible || match === null || match.turn !== 'lanyin' || match.phase !== 'draw') {
+    const isLanyinTurn = match !== null
+      && match.turn === 'lanyin'
+      && (match.phase === 'draw' || match.phase === 'discard')
+    if (!app.panelOpen || !documentVisible || !isLanyinTurn) {
       setAiThinking(false)
       return
     }
@@ -131,9 +153,33 @@ export function useGameController(
     const timer = window.setTimeout(() => {
       if (document.visibilityState === 'hidden') return
       try {
-        const next = playAiTurn(match, app.preferences.difficulty)
-        const added = next.history.slice(match.history.length)
-        const last = added.at(-1)
+        if (match.phase === 'draw') {
+          const source = chooseAiDraw(lanyinView(match), app.preferences.difficulty)
+          const next = source === 'pass'
+            ? passAtWall(match, 'lanyin')
+            : drawCard(match, 'lanyin', source)
+          commitMatch(next)
+          setSelectedCardId(null)
+          setError(null)
+          playSound(source === 'pass' ? 'result' : 'draw')
+          if (source === 'discard') speak('ai_take_discard')
+          return
+        }
+
+        const legalWallKnocks = match.wallKnockRequired
+          ? new Set(legalKnockDiscards(match.hands.lanyin, match.rules, match.drawnCardId).map((card) => card.id))
+          : undefined
+        let decision = chooseAiDiscard(lanyinView(match), app.preferences.difficulty)
+        if (legalWallKnocks !== undefined && !legalWallKnocks.has(decision.cardId)) {
+          const fallback = legalWallKnocks.values().next().value as string | undefined
+          if (fallback === undefined) throw new Error('wall draw produced no legal knock discard')
+          decision = { cardId: fallback, intent: 'knock' }
+        } else if (match.wallKnockRequired) {
+          decision = { ...decision, intent: 'knock' }
+        }
+
+        const next = discardCard(match, 'lanyin', decision.cardId, decision.intent)
+        const last = next.history.at(-1)
         commitMatch(next)
         setSelectedCardId(null)
         setError(null)
@@ -142,17 +188,14 @@ export function useGameController(
         if (matchLine !== null) speak(matchLine)
         else if (last?.type === 'gin') speak('ai_gin')
         else if (last?.type === 'knock') speak('ai_knock')
-        else if (added.some((action) => action.type === 'take_discard')) speak('ai_take_discard')
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : '澜音暂时没接住这手牌。')
-      } finally {
         setAiThinking(false)
       }
-    }, app.preferences.fastAi ? 120 : 560)
-    return () => {
-      window.clearTimeout(timer)
-      setAiThinking(false)
-    }
+    }, match.phase === 'draw'
+      ? (app.preferences.fastAi ? 120 : 560)
+      : (app.preferences.fastAi ? 180 : 420))
+    return () => window.clearTimeout(timer)
   }, [app.match, app.panelOpen, app.preferences.difficulty, app.preferences.fastAi, commitMatch, documentVisible, playSound, speak])
 
   const startMatch = useCallback(() => {

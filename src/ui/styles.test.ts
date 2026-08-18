@@ -74,3 +74,36 @@ describe('DSH launcher placement', () => {
     })
   })
 })
+
+describe('public table information layout', () => {
+  const root = postcss.parse(GAME_STYLES)
+
+  function baseRule(selector: string): Rule | undefined {
+    let found: Rule | undefined
+    root.walkRules((rule) => {
+      if (rule.selector === selector && mediaQuery(rule) === null) found = rule
+    })
+    return found
+  }
+
+  it('gives public clues their own readable areas without exposing the card row', () => {
+    expect(declarations(baseRule('.dwc-opponent-zone')!)).toMatchObject({
+      display: 'grid',
+    })
+    expect(declarations(baseRule('.dwc-known-cards > div')!)).toMatchObject({
+      'overflow-x': 'auto',
+    })
+    expect(declarations(baseRule('.dwc-public-pressure')!)).toMatchObject({
+      display: 'grid',
+    })
+    expect(declarations(baseRule('.dwc-public-pressure p')!)).toMatchObject({
+      'white-space': 'normal',
+    })
+    expect(declarations(baseRule('.dwc-public-pressure small')!)).toMatchObject({
+      display: 'block',
+    })
+    expect(declarations(baseRule('.dwc-public-actions ol')!)).toMatchObject({
+      'overflow-x': 'auto',
+    })
+  })
+})

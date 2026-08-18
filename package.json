@@ -1,7 +1,7 @@
 {
   "name": "dsh-whale-cards",
-  "version": "0.1.1",
-  "description": "A calm, resumable Gin Rummy break with an original whale companion inside DSH Web.",
+  "version": "0.2.0",
+  "description": "A competitive Gin Rummy break with a durable, model-powered whale companion inside DSH Web.",
   "type": "module",
   "engines": {
     "node": "^22.19.0 || >=24.0.0"
@@ -10,6 +10,8 @@
   "exports": {
     ".": "./lib/index.js",
     "./client": "./lib/client.js",
+    "./typert": "./lib/typert.host.js",
+    "./remote": "./lib/typert.remote-client.js",
     "./cordis.patch.yml": "./cordis.patch.yml",
     "./package.json": "./package.json"
   },
@@ -35,7 +37,9 @@
     },
     "client": {
       "inject": [
-        "@deepseek-ai/dsh-client-runtime"
+        "@deepseek-ai/dsh-client-runtime",
+        "@deepseek-ai/dsh-client-connection",
+        "@deepseek-ai/dsh-api-remotes"
       ],
       "platform": "web"
     }
@@ -47,13 +51,32 @@
     "card-game"
   ],
   "license": "MIT",
+  "dependencies": {
+    "zod": "^4.4.3"
+  },
   "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-api-remotes": "^0.1.0-rc.7",
+    "@deepseek-ai/dsh-client-connection": "^0.1.0-rc.7",
+    "@deepseek-ai/dsh-client-runtime": "^0.1.0-rc.7",
+    "@deepseek-ai/dsh-llm": "^0.1.0-rc.7",
+    "@deepseek-ai/dsh-storage-domain": "^0.1.0-rc.7",
+    "@deepseek-ai/dsh-typert-protocol": "^0.1.0-rc.7",
     "react": "^18.2.0",
     "react-dom": "^18.2.0"
   },
   "devDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-api-gateway": "^0.1.0-rc.7",
+    "@deepseek-ai/dsh-api-remotes": "^0.1.0-rc.7",
+    "@deepseek-ai/dsh-client-connection": "^0.1.0-rc.7",
     "@deepseek-ai/dsh-client-runtime": "^0.1.0-rc.7",
+    "@deepseek-ai/dsh-llm": "^0.1.0-rc.7",
+    "@deepseek-ai/dsh-storage-domain": "^0.1.0-rc.7",
+    "@deepseek-ai/dsh-typert-protocol": "^0.1.0-rc.7",
+    "@deepseek-ai/dsh-typert-registry": "^0.1.0-rc.7",
     "@testing-library/react": "^16.3.2",
+    "@types/node": "^24.13.3",
     "@types/react": "~18.3.1",
     "@types/react-dom": "~18.3.0",
     "jsdom": "^29.1.1",

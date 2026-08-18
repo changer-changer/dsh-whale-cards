@@ -1,19 +1,44 @@
 import { useCallback, useEffect, useState } from 'react'
-import { LANYIN_HARBOR_ART } from '../client/generated/art'
+import {
+  LANYIN_CALM_ART,
+  LANYIN_CONCERNED_ART,
+  LANYIN_PLEASED_ART,
+  LANYIN_THINKING_ART,
+} from '../client/generated/art'
+import type { CompanionPort } from '../companion/core.ts'
 import type { PlayerPreferences } from '../game/persistence'
+import { CompanionPanel } from './CompanionPanel.tsx'
+import { lanyinExpression, type LanyinExpression } from './expression.ts'
 import type { TaskListSource } from './task-status'
 import { ResultView } from './ResultView'
 import { RulesPanel } from './RulesPanel'
 import { SettingsPanel } from './SettingsPanel'
 import { GAME_STYLES, STYLE_ELEMENT_ID } from './styles'
 import { TableView } from './TableView'
+import { useCompanion } from './useCompanion.ts'
 import { useGameController } from './useGameController'
 import { WelcomeView } from './WelcomeView'
 
 export interface GameAppProps {
+  readonly companion?: CompanionPort
   readonly initiallyOpen?: boolean
   readonly preview?: boolean
   readonly taskSource?: TaskListSource
+}
+
+const EXPRESSION_ART: Record<LanyinExpression, string> = {
+  calm: LANYIN_CALM_ART,
+  concerned: LANYIN_CONCERNED_ART,
+  pleased: LANYIN_PLEASED_ART,
+  thinking: LANYIN_THINKING_ART,
+}
+
+function latestAssistantText(messages: readonly { readonly role: 'user' | 'assistant'; readonly text: string }[]): string | undefined {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index]
+    if (message?.role === 'assistant') return message.text
+  }
+  return undefined
 }
 
 function Mark(): React.JSX.Element {
@@ -25,11 +50,21 @@ function Mark(): React.JSX.Element {
   )
 }
 
-export function GameApp({ initiallyOpen, preview = false, taskSource }: GameAppProps): React.JSX.Element {
+export function GameApp({ companion: companionPort, initiallyOpen, preview = false, taskSource }: GameAppProps): React.JSX.Element {
   const game = useGameController(taskSource, initiallyOpen)
+  const companion = useCompanion(companionPort, taskSource, game.app.match)
   const [rulesOpen, setRulesOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [companionOpen, setCompanionOpen] = useState(false)
   const match = game.app.match
+  const expression = lanyinExpression({
+    aiThinking: game.aiThinking,
+    lastPublicAction: match?.history.at(-1),
+    mood: companion.mood,
+    taskNotice: game.taskNotice,
+  })
+  const artUrl = EXPRESSION_ART[expression]
+  const latestCompanionReply = latestAssistantText(companion.messages)
 
   const start = useCallback(() => {
     if (!game.app.preferences.tutorialSeen) {
@@ -52,7 +87,8 @@ export function GameApp({ initiallyOpen, preview = false, taskSource }: GameAppP
       if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement) return
       if (event.key === 'Escape') {
         event.preventDefault()
-        if (settingsOpen) setSettingsOpen(false)
+        if (companionOpen) setCompanionOpen(false)
+        else if (settingsOpen) setSettingsOpen(false)
         else if (rulesOpen) setRulesOpen(false)
         else game.closePanel()
         return
@@ -74,16 +110,16 @@ export function GameApp({ initiallyOpen, preview = false, taskSource }: GameAppP
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [game, match, rulesOpen, settingsOpen])
+  }, [companionOpen, game, match, rulesOpen, settingsOpen])
 
   const changePreferences = (next: PlayerPreferences): void => game.updatePreferences(next)
 
   return (
-    <div className="dwc-root" data-preview={preview ? 'true' : 'false'}>
+    <div className="dwc-root" data-expression={expression} data-preview={preview ? 'true' : 'false'}>
       <style id={STYLE_ELEMENT_ID}>{GAME_STYLES}</style>
       {!game.app.panelOpen && (
         <button className="dwc-launcher" type="button" onClick={game.openPanel} aria-label="打开鲸牌茶歇">
-          <span className="dwc-launcher-art" style={{ backgroundImage: `url(${LANYIN_HARBOR_ART})` }} />
+          <span className="dwc-launcher-art" style={{ backgroundImage: `url(${artUrl})` }} />
           <span className="dwc-launcher-copy"><strong>鲸牌</strong><small>和澜音歇一手</small></span>
           {game.taskNotice !== null && <span className="dwc-launcher-badge" aria-label="DSH 任务有新状态" />}
         </button>
@@ -102,6 +138,12 @@ export function GameApp({ initiallyOpen, preview = false, taskSource }: GameAppP
                 </div>
               )}
               <nav className="dwc-top-actions" aria-label="游戏菜单">
+                <button
+                  type="button"
+                  className="dwc-text-button dwc-text-button--companion"
+                  onClick={() => setCompanionOpen(true)}
+                  aria-label="打开澜音对话与记忆"
+                >澜音</button>
                 <button type="button" className="dwc-text-button" onClick={() => setRulesOpen(true)}>玩法</button>
                 <button type="button" className="dwc-text-button" onClick={() => setSettingsOpen(true)}>偏好</button>
                 <button type="button" className="dwc-close-button" onClick={game.closePanel} aria-label="收起鲸牌">—</button>
@@ -129,7 +171,7 @@ export function GameApp({ initiallyOpen, preview = false, taskSource }: GameAppP
             <div className="dwc-content">
               {match === null ? (
                 <WelcomeView
-                  artUrl={LANYIN_HARBOR_ART}
+                  artUrl={artUrl}
                   stats={game.app.stats}
                   onStart={start}
                   onRules={() => setRulesOpen(true)}
@@ -141,14 +183,14 @@ export function GameApp({ initiallyOpen, preview = false, taskSource }: GameAppP
                   match={match}
                   selectedCardId={game.selectedCardId}
                   aiThinking={game.aiThinking}
-                  dialogue={game.dialogue}
+                  dialogue={latestCompanionReply ?? game.dialogue}
                   rapport={game.app.stats.rapport}
-                  artUrl={LANYIN_HARBOR_ART}
+                  artUrl={artUrl}
                   onSelectCard={game.selectCard}
                   onDraw={game.draw}
                   onDiscard={({ cardId, kind }) => game.discard(kind, cardId)}
                   onPassWall={game.passWall}
-                  onChat={game.chat}
+                  onChat={() => setCompanionOpen(true)}
                 />
               )}
             </div>
@@ -166,6 +208,19 @@ export function GameApp({ initiallyOpen, preview = false, taskSource }: GameAppP
         preferences={game.app.preferences}
         onChange={changePreferences}
         onClose={() => setSettingsOpen(false)}
+      />
+      <CompanionPanel
+        open={companionOpen}
+        snapshot={companion.snapshot}
+        catalog={companion.catalog}
+        messages={companion.messages}
+        busy={companion.busy}
+        error={companion.error}
+        onClose={() => setCompanionOpen(false)}
+        onSelectModel={companion.selectModel}
+        onSend={companion.send}
+        onRemember={companion.remember}
+        onForget={companion.forget}
       />
     </div>
   )

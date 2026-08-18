@@ -72,7 +72,8 @@ No third-party image is embedded in the generated client bundle.
 ## Package dependencies
 
 React and React DOM are peer dependencies supplied by the DSH browser module
-loader. Development and test packages remain under their respective upstream
-licenses. Their presence in a lockfile does not change this project's MIT
-license, and their source trees are not shipped by this package's `files`
-manifest.
+loader. [Zod](https://github.com/colinhacks/zod) is an MIT-licensed runtime
+dependency used to validate the strict Host/Client Remote boundary. Development
+and test packages remain under their respective upstream licenses. Their
+presence in a lockfile does not change this project's MIT license, and their
+source trees are not shipped by this package's `files` manifest.

@@ -1,6 +1,8 @@
 import { canKnockWithUpcard, legalKnockDiscards } from '../game/engine.ts'
+import { rankLabel, suitSymbol } from '../game/cards.ts'
 import { bestMeldLayout } from '../game/melds.ts'
-import type { DrawSource, MatchState } from '../game/types.ts'
+import { currentHandActions, publicSignal } from '../game/public-signals.ts'
+import type { Card, DrawSource, MatchState, PublicAction } from '../game/types.ts'
 import { CardView } from './CardView.tsx'
 
 export interface DiscardIntent {
@@ -25,7 +27,9 @@ export interface TableViewProps {
 function turnStatus(match: MatchState, aiThinking: boolean): string {
   if (match.phase === 'reveal') return '本手已经结算'
   if (match.phase === 'match_over') return '三手牌局已经结束'
-  if (aiThinking) return '澜音正在理牌…'
+  if (aiThinking) {
+    return match.phase === 'draw' ? '澜音正在摸牌…' : '澜音正在挑选弃牌…'
+  }
   if (match.turn === 'lanyin') return '等待澜音出牌…'
   if (match.phase === 'draw') {
     return match.stock.length <= 2
@@ -35,6 +39,35 @@ function turnStatus(match: MatchState, aiThinking: boolean): string {
   return match.wallKnockRequired
     ? '请选择一张牌立即敲牌'
     : '选择一张手牌，然后弃牌或敲牌'
+}
+
+function publicActionLabel(action: PublicAction): string {
+  const player = action.player === 'human' ? '你' : '澜音'
+  const card = action.card === undefined
+    ? ''
+    : ` ${rankLabel(action.card.rank)}${suitSymbol(action.card.suit)}`
+  if (action.type === 'draw_stock') return `${player}摸了一张暗牌`
+  if (action.type === 'take_discard') return `${player}拿走明牌${card}`
+  if (action.type === 'discard') return `${player}弃出${card}`
+  if (action.type === 'knock') return `${player}以${card}敲牌`
+  if (action.type === 'gin') return `${player}以${card}完成 Gin`
+  return '开局发牌'
+}
+
+function knownLanyinCards(history: readonly PublicAction[]): readonly Card[] {
+  const known = new Map<string, Card>()
+  for (const action of history) {
+    if (action.type === 'deal') {
+      known.clear()
+      continue
+    }
+    if (action.player !== 'lanyin' || action.card === undefined) continue
+    if (action.type === 'take_discard') known.set(action.card.id, action.card)
+    else if (action.type === 'discard' || action.type === 'knock' || action.type === 'gin') {
+      known.delete(action.card.id)
+    }
+  }
+  return [...known.values()]
 }
 
 export function TableView({
@@ -74,6 +107,9 @@ export function TableView({
   const meldCardIds = new Set(layout.melds.flatMap((meld) => meld.cards.map((card) => card.id)))
   const canTakeWallUpcard = atWall && canDraw && canKnockWithUpcard(match, 'human')
   const normalizedRapport = Math.max(0, Math.min(100, rapport))
+  const recentActions = currentHandActions(match.history).slice(-4)
+  const knownCards = knownLanyinCards(match.history)
+  const signal = publicSignal(match.history, match.stock.length)
 
   return (
     <section className="dwc-table" aria-label="与澜音的 Gin Rummy 牌桌">
@@ -150,6 +186,26 @@ export function TableView({
                 </span>
               ))}
             </div>
+            <section
+              className="dwc-known-cards"
+              aria-label="澜音已知明牌"
+              data-known-count={knownCards.length}
+            >
+              <span>已知明牌</span>
+              <div>
+                {knownCards.length === 0
+                  ? <small>暂无</small>
+                  : knownCards.map((card) => <CardView card={card} compact key={card.id} />)}
+              </div>
+            </section>
+            <section
+              className="dwc-public-pressure"
+              aria-label="澜音公开迹象"
+              data-pressure={signal.pressure}
+            >
+              <span>敲牌压力 {signal.label}</span>
+              <p>{signal.clue}<small>只根据公开信息估计</small></p>
+            </section>
           </div>
 
           <div className="dwc-table-center">
@@ -182,6 +238,15 @@ export function TableView({
               <span className={aiThinking ? 'dwc-status-dot dwc-status-dot--thinking' : 'dwc-status-dot'} aria-hidden="true" />
               <span>{turnStatus(match, aiThinking)}</span>
             </div>
+
+            <section className="dwc-public-actions" aria-label="最近公开行动">
+              <span>牌桌动向</span>
+              <ol>
+                {recentActions.map((action, index) => (
+                  <li key={`${action.at}-${index}`}>{publicActionLabel(action)}</li>
+                ))}
+              </ol>
+            </section>
 
             {atWall && canDraw ? (
               <button type="button" className="dwc-button dwc-button--quiet" onClick={onPassWall}>

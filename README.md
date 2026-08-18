@@ -1,14 +1,18 @@
 # 鲸牌茶歇
 
-「鲸牌茶歇」是一个可安装到 DeepSeek Harness（DSH）Web 的本地单人牌局插件。等待编译、测试或长任务时，可以和原创成年鲸鱼牌友「澜音」打一场三手 Gin Rummy；随时收起，回来后从同一步继续。
+「鲸牌茶歇」是一个可安装到 DeepSeek Harness（DSH）Web 的双人牌局与 AI 牌友插件。等待编译、测试或长任务时，可以和原创成年鲸鱼牌友「澜音」打一场三手 Gin Rummy；她有自己的 DSH 模型、可由你查看和删除的本机长期记忆，也会留意任务是否完成或正在等你。
 
 ![原创成年鲸鱼牌友澜音与港湾牌桌](assets/lanyin-harbor.jpg)
 
-- 经典双人 Gin Rummy，三手决胜
-- 松弛、从容、敏锐三档本地 AI，不读取玩家手牌做决策
-- 对局、偏好和统计保存在浏览器本地
+- 经典双人 Gin Rummy，三手决胜；澜音会分开摸牌、思考和弃牌
+- 最近公开行动、已知明牌和牌路压力，让你可以真正读她的意图
+- 松弛、从容、敏锐三档确定性牌力，不读取玩家手牌或未来牌序
+- 独立选择一个 DSH 模型与澜音交谈，不改变工作任务正在使用的模型
+- 明确说“记住：……”即可写入长期记忆；每条记忆都可见、可单独删除
+- calm / thinking / pleased / concerned 四种原创表情，触发只依赖公开信息
+- 对局、偏好和统计保存在浏览器本地；澜音记忆保存在 DSH Host 私有存储
 - DSH 当前任务完成或需要确认时，只安静提醒一次
-- 无账号、无广告、无联网对战、无模型调用、无外部分析
+- 无账号、无广告、无联网对战、无遥测；模型只负责语言，不参与出牌或计分
 - 原创角色与港湾茶室美术，插件卸载/重载时完整移除自身 UI
 
 ## 要求
@@ -38,7 +42,7 @@ dsh web
 
 ### 从预构建 tarball 安装
 
-可以直接从 [GitHub Releases](https://github.com/changer-changer/dsh-whale-cards/releases) 下载已验证的 `dsh-whale-cards-0.1.1.tgz`，也可以自行构建：
+可以直接从 [GitHub Releases](https://github.com/changer-changer/dsh-whale-cards/releases) 下载已验证的 `dsh-whale-cards-0.2.0.tgz`，也可以自行构建：
 
 发布者先执行：
 
@@ -53,7 +57,7 @@ npm pack
 用户安装生成的 tarball：
 
 ```sh
-dsh plugin --profile web add ./dsh-whale-cards-0.1.1.tgz
+dsh plugin --profile web add ./dsh-whale-cards-0.2.0.tgz
 dsh --profile web --dump-config
 dsh web
 ```
@@ -86,6 +90,15 @@ dsh plugin --profile web remove dsh-whale-cards
 4. 摸牌后点选一张手牌，再选择「弃牌」；当散牌不超过 10 点时，也可以选择「敲牌」。
 5. 每手结算后进入下一手；三手结束后比较累计得分。
 6. 任何时候都可以收起。牌局被冻结并保存，刷新页面、切换 DSH 会话或稍后重新打开都可恢复。
+
+点顶部「澜音」或角色对话框，可以打开陪伴面板：
+
+1. 从 DSH 已配置模型中给澜音单独选择一个模型。
+2. 自由聊牌或当前任务状态；她只收到当前任务标题、运行/完成/待处理数量，以及牌桌公开迹象。
+3. 输入“记住：我喜欢慢一点的节奏”，或在记忆区手动添加一条长期记忆。
+4. 所有长期记忆都会完整列出；点“忘记”即可从 Host 存储和以后模型上下文中删除。
+
+模型不可用时，确定性牌局、计分、存档与固定牌桌提示仍然可以正常工作。
 
 刚从弃牌区拿起的明牌，本回合不能原样弃回。牌堆只剩两张时不能再摸暗牌：如果拿明牌后能立即合法敲牌，可以这样结束；否则选择结束本手。
 
@@ -121,15 +134,17 @@ dsh plugin --profile web remove dsh-whale-cards
 - 发牌使用浏览器随机种子；每场 seed 和完整牌序随存档固定，难度不会改牌。
 - AI 的决策视图只包含它自己的手牌、弃牌顶牌、牌堆数量和双方已经公开的动作，不把玩家手牌传给决策函数。
 - 三档难度只改变拿明牌、保留组合、规避送牌和敲牌时机。
-- 游戏逻辑、AI 和计分全部在浏览器本地运行，不调用 LLM，也不会因为网络或 DSH 模型状态改变结果。
+- 游戏逻辑、牌力 AI 和计分全部在浏览器本地运行。LLM 只生成澜音的对话，不参与发牌、选牌、合法性或计分；网络或模型故障不会改变牌局结果。
+- 表情只读取公开任务状态、可见行动和对话状态，不读取任一方暗牌、组合质量或内部 AI 分数作为“读心”线索。
 
 ## 隐私与本地数据
 
-插件默认完全离线：
+插件不包含遥测、广告或第三方 CDN。只有在你给澜音选择 DSH 模型并发消息时，DSH 才会按该模型 provider 的配置发起模型请求：
 
-- 不发送网络请求，不加载 CDN，不包含遥测或广告 SDK。
-- 不读取 DSH 对话、提示词、工具参数、工具结果、代码或工作区文件。
-- 只在内存中观察开局时当前 session 的 `running` 与 `pendingInteraction` 状态，用于完成/待处理提醒。
+- Host 固定澜音的人格提示，并强制 `tools: []`；模型不能运行命令、读取文件或操作任务。
+- 不读取或发送 DSH 对话正文、用户 prompt、代码、diff、终端、工具参数或工具结果。
+- 只投影当前任务的 `displayTitle`、`running`、`pendingInteraction` 与 `completed`。
+- 模型会收到当前牌局比分、手数与公开牌路摘要，不会收到玩家暗牌、未来牌序或确定性 AI 内部评分。
 - 港湾美术随 client bundle 以内嵌 data URL 提供，音效在本地合成。
 - 不创建账号、cookie、云存档或跨设备标识。
 
@@ -141,6 +156,8 @@ dsh-whale-cards:save:v1
 
 其中保存当前完整牌局（seed、牌序、双方手牌、得分、回合和公开动作）、面板开关、难度/声音/台词偏好，以及本地局数、胜场和熟悉度。数据留在 DSH Web 的同源浏览器存储中，其他同源页面脚本理论上也能访问；不要把它当作机密存储。
 
+澜音的模型选择、最近有限对话与明确保存的长期记忆不在 `localStorage`，而在当前 DSH profile 的 Host 私有 storage domain 中。它们会跨浏览器刷新和 DSH 重启保留，直到你逐条删除或清理该 DSH profile；这不是跨设备云同步，也不承诺在删除整个 profile 后恢复。
+
 如需彻底删除存档，在 DSH Web 的浏览器开发者工具中执行后刷新：
 
 ```js
@@ -151,11 +168,12 @@ localStorage.removeItem('dsh-whale-cards:save:v1')
 
 - `package.json` 的 `dsh.bundle.patch` 指向 `cordis.patch.yml`。
 - patch 向 Web profile 插入唯一的 `whale-cards` Loader 行。
-- Host 入口 `src/index.ts` 无副作用；游戏不在 DSH Host 中启动服务。
-- Browser 入口注入官方 `sessions` 服务，只投影任务运行/待处理状态。
+- Host 入口注册 `whaleCompanion` Remote 服务；它以 `ctx.llm.stream()` 调用独立模型，并通过 `storageDomain` 保存长期记忆。
+- Browser 入口注入官方 `sessions` 与 Remote gateway；只投影任务标题/运行/待处理/完成状态，并把严格校验后的请求交给 Host。
 - UI 在 `document.body` 下创建单一 Shadow DOM，样式与 DSH 页面隔离。
 - Cordis effect 卸载时执行 React `unmount()` 并删除 host；事件、计时器和音频也由各自 effect 清理。
-- 规则、AI、持久化、台词、美术和声音全部包含在插件 client bundle 中。
+- Remote 请求与响应使用严格 Zod codec；Client 不能传任意 system prompt、工具或 API key。
+- 规则、牌力 AI、游戏存档、美术和声音仍全部包含在插件 client bundle 中。
 
 ## 开发与验证
 
@@ -170,17 +188,19 @@ npm pack --dry-run     # 检查实际发布文件
 其他脚本：
 
 ```sh
-npm run generate:assets  # assets/lanyin-harbor.jpg → src/client/generated/art.ts
+npm run generate:assets  # 四张澜音表情 JPEG → src/client/generated/art.ts
 npm run prepare          # Git 依赖安装时使用的自包含构建
 ```
 
 主要目录：
 
 ```text
-src/game/        牌、组合搜索、计分状态机、本地 AI、存档与模拟测试
-src/ui/          牌桌、控制器、台词、音效和 DSH 任务提醒
-src/client/      DSH Browser 入口、Shadow DOM 挂载与清理
-assets/          原创分发美术
+src/game/        牌、组合搜索、计分状态机、本地 AI、公开线索、存档与模拟测试
+src/companion/   固定人格、长期记忆核心、严格 Remote schema 与描述符
+src/host/        DSH 模型适配、storage domain 与 Host Remote 服务
+src/ui/          牌桌、陪伴面板、表情、控制器、音效和 DSH 任务提醒
+src/client/      DSH Browser 入口、Remote bridge、Shadow DOM 挂载与清理
+assets/          原创分发美术与四种表情
 docs/            美术生成与来源记录
 lib/             构建产物，不手工编辑
 ```
@@ -191,6 +211,9 @@ lib/             构建产物，不手工编辑
 - 摸牌/弃牌/敲牌/两张牌墙、Gin 和 undercut 计分
 - 版本化存档在任意决策点的精确恢复与坏数据拒绝
 - AI 不接收玩家手牌的决策边界
+- 澜音两阶段出牌、公开行动轨迹、已知明牌和公开压力不泄露隐藏信息
+- 独立模型目录、`tools: []` Host 调用、严格 Remote codec 与 storage-domain 重启恢复
+- 明确“记住”在模型离线时仍先持久化；记忆可见、可单条删除且不会再次进入模型上下文
 - 96 个固定 seed、两种计分 profile、三档难度的完整三手模拟；每一步检查牌不丢不重、手牌数量、牌墙、得分和结算阶段，并以 256 次状态转换为不死循环上限
 - DSH client Shadow DOM 挂载、session 适配与卸载零残留
 

@@ -5,7 +5,11 @@ const PACKAGE_ID = 'dsh-whale-cards'
 export default defineConfig([
   {
     name: `${PACKAGE_ID}/host`,
-    entry: { index: 'src/index.ts' },
+    entry: {
+      index: 'src/index.ts',
+      'typert.host': 'src/companion/remote-host.ts',
+      'typert.remote-client': 'src/companion/remote-client.ts',
+    },
     outDir: 'lib',
     format: 'esm',
     platform: 'node',
@@ -14,8 +18,16 @@ export default defineConfig([
     dts: false,
     sourcemap: true,
     clean: true,
+    deps: {
+      neverBundle: [
+        '@deepseek-ai/cordis',
+        '@deepseek-ai/dsh-llm',
+        '@deepseek-ai/dsh-storage-domain',
+        '@deepseek-ai/dsh-typert-protocol',
+      ],
+    },
     outputOptions: {
-      entryFileNames: 'index.js',
+      entryFileNames: '[name].js',
     },
   },
   {
