@@ -41,6 +41,7 @@ export default defineConfig([
     sourcemap: true,
     clean: false,
     deps: {
+      alwaysBundle: ['zod'],
       neverBundle: ['react', 'react-dom', 'react-dom/client', 'react/jsx-runtime'],
     },
     outputOptions: {
