@@ -10,19 +10,21 @@ import {
 } from '../game/engine'
 import {
   DEFAULT_APP_STATE,
-  loadAppState,
-  saveAppState,
+  LEGACY_PERSISTENCE,
+  type GamePersistenceAdapter,
   type PlayerPreferences,
   type SavedAppState,
 } from '../game/persistence'
 import type { DrawSource, MatchState } from '../game/types'
 import { useGameAudio } from './audio'
 import { dialogueLine, type DialogueEvent } from './dialogue'
-import { useTaskNotice, type TaskListSource } from './task-status'
 
-function restoreState(initiallyOpen: boolean | undefined): SavedAppState {
+function restoreState(
+  initiallyOpen: boolean | undefined,
+  adapter: GamePersistenceAdapter,
+): SavedAppState {
   try {
-    const saved = loadAppState()
+    const saved = adapter.load()
     return initiallyOpen === undefined ? saved : { ...saved, panelOpen: initiallyOpen }
   } catch {
     return { ...DEFAULT_APP_STATE, panelOpen: initiallyOpen ?? false }
@@ -75,10 +77,8 @@ export interface GameController {
   readonly dialogue: string
   readonly error: string | null
   readonly selectedCardId: string | null
-  readonly taskNotice: 'done' | 'needs_input' | null
   chat(): void
   clearError(): void
-  clearTaskNotice(): void
   closePanel(): void
   discard(intent: 'discard' | 'knock', cardId?: string): void
   draw(source: DrawSource): void
@@ -91,10 +91,10 @@ export interface GameController {
 }
 
 export function useGameController(
-  taskSource: TaskListSource | undefined,
   initiallyOpen: boolean | undefined,
+  adapter: GamePersistenceAdapter = LEGACY_PERSISTENCE,
 ): GameController {
-  const [app, setApp] = useState<SavedAppState>(() => restoreState(initiallyOpen))
+  const [app, setApp] = useState<SavedAppState>(() => restoreState(initiallyOpen, adapter))
   const [selectedCardId, setSelectedCardId] = useState<string | null>(null)
   const [dialogue, setDialogue] = useState(() => dialogueLine('greeting', 1))
   const [error, setError] = useState<string | null>(null)
@@ -102,15 +102,14 @@ export function useGameController(
   const [documentVisible, setDocumentVisible] = useState(() => document.visibilityState !== 'hidden')
   const dialogueIndex = useRef(0)
   const playSound = useGameAudio(app.preferences.muted)
-  const task = useTaskNotice(taskSource, app.match?.seed ?? null)
 
   useEffect(() => {
     try {
-      saveAppState(app)
+      adapter.save(app)
     } catch {
       // Storage may be disabled; the game remains fully playable for this session.
     }
-  }, [app])
+  }, [app, adapter])
 
   useEffect(() => {
     const onVisibility = (): void => setDocumentVisible(document.visibilityState !== 'hidden')
@@ -133,12 +132,6 @@ export function useGameController(
       ...updateProgress(previous, match),
     }))
   }, [])
-
-  useEffect(() => {
-    if (task.notice === null) return
-    speak(task.notice === 'done' ? 'task_done' : 'task_needs_input', true)
-    playSound('result')
-  }, [playSound, speak, task.notice])
 
   useEffect(() => {
     const match = app.match
@@ -273,10 +266,8 @@ export function useGameController(
     dialogue,
     error,
     selectedCardId,
-    taskNotice: task.notice,
     chat: () => { playSound('tap'); speak('chat', true) },
     clearError: () => setError(null),
-    clearTaskNotice: task.clear,
     closePanel: () => setApp((previous) => ({ ...previous, panelOpen: false })),
     discard,
     draw,

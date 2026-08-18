@@ -53,7 +53,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
 }
 
-function isValidMatch(value: unknown): value is MatchState {
+/**
+ * Validates a match's structural shape (52 unique cards, phase/turn enums) —
+ * the shared match validator used by the legacy parser and the Gin game save.
+ */
+export function isValidMatch(value: unknown): value is MatchState {
   if (!isRecord(value) || value.version !== 1) return false
   if (!['draw', 'discard', 'reveal', 'match_over'].includes(String(value.phase))) return false
   if (!['human', 'lanyin'].includes(String(value.turn))) return false
@@ -67,7 +71,7 @@ function isValidMatch(value: unknown): value is MatchState {
   return ids.every((id) => typeof id === 'string') && new Set(ids).size === 52
 }
 
-function normalizePreferences(value: unknown): PlayerPreferences {
+export function normalizePreferences(value: unknown): PlayerPreferences {
   if (!isRecord(value)) return DEFAULT_PREFERENCES
   return {
     dialogue: value.dialogue === 'quiet' || value.dialogue === 'lively' ? value.dialogue : 'standard',
@@ -78,7 +82,7 @@ function normalizePreferences(value: unknown): PlayerPreferences {
   }
 }
 
-function normalizeStats(value: unknown): PlayerStats {
+export function normalizeStats(value: unknown): PlayerStats {
   if (!isRecord(value)) return DEFAULT_STATS
   const safeNumber = (candidate: unknown, maximum: number): number => (
     typeof candidate === 'number' && Number.isFinite(candidate)
@@ -93,11 +97,12 @@ function normalizeStats(value: unknown): PlayerStats {
   }
 }
 
-export function parseSavedAppState(serialized: string | null): SavedAppState {
-  if (serialized === null) return DEFAULT_APP_STATE
+/** Returns `null` when the payload is absent, corrupt, or not a version-1 save. */
+export function parseSavedAppStateOrNull(serialized: string | null): SavedAppState | null {
+  if (serialized === null) return null
   try {
     const value: unknown = JSON.parse(serialized)
-    if (!isRecord(value) || value.version !== 1) return DEFAULT_APP_STATE
+    if (!isRecord(value) || value.version !== 1) return null
     return {
       version: 1,
       match: value.match === null || value.match === undefined
@@ -111,8 +116,12 @@ export function parseSavedAppState(serialized: string | null): SavedAppState {
         : {}),
     }
   } catch {
-    return DEFAULT_APP_STATE
+    return null
   }
+}
+
+export function parseSavedAppState(serialized: string | null): SavedAppState {
+  return parseSavedAppStateOrNull(serialized) ?? DEFAULT_APP_STATE
 }
 
 export function loadAppState(storage: Pick<Storage, 'getItem'> = localStorage): SavedAppState {
@@ -128,5 +137,17 @@ export function saveAppState(
 
 export function clearAppState(storage: Pick<Storage, 'removeItem'> = localStorage): void {
   storage.removeItem(STORAGE_KEY)
+}
+
+/** Persistence seam a controller reads/writes `SavedAppState` through. */
+export interface GamePersistenceAdapter {
+  load(): SavedAppState
+  save(state: SavedAppState): void
+}
+
+/** Default adapter that persists to the legacy `dsh-whale-cards:save:v1` key. */
+export const LEGACY_PERSISTENCE: GamePersistenceAdapter = {
+  load: () => loadAppState(),
+  save: (state) => saveAppState(state),
 }
 

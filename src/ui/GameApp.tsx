@@ -5,8 +5,9 @@ import {
   LANYIN_PLEASED_ART,
   LANYIN_THINKING_ART,
 } from '../client/generated/art'
-import type { CompanionPort } from '../companion/core.ts'
+import type { CompanionGameContext, CompanionPort } from '../companion/core.ts'
 import type { PlayerPreferences } from '../game/persistence'
+import type { MatchState } from '../game/types'
 import { CompanionPanel } from './CompanionPanel.tsx'
 import { lanyinExpression, type LanyinExpression } from './expression.ts'
 import type { TaskListSource } from './task-status'
@@ -50,9 +51,18 @@ function Mark(): React.JSX.Element {
   )
 }
 
+function ginGameContext(match: MatchState | null): CompanionGameContext | null {
+  if (match === null) return null
+  return {
+    gameId: 'gin-rummy',
+    gameTitle: 'Gin Rummy',
+    summary: `第 ${match.round}/${match.rules.handCount} 手；你 ${match.scores.human} 分，澜音 ${match.scores.lanyin} 分`,
+  }
+}
+
 export function GameApp({ companion: companionPort, initiallyOpen, preview = false, taskSource }: GameAppProps): React.JSX.Element {
-  const game = useGameController(taskSource, initiallyOpen)
-  const companion = useCompanion(companionPort, taskSource, game.app.match)
+  const game = useGameController(initiallyOpen)
+  const companion = useCompanion(companionPort, taskSource, ginGameContext(game.app.match))
   const [rulesOpen, setRulesOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [companionOpen, setCompanionOpen] = useState(false)
@@ -61,7 +71,7 @@ export function GameApp({ companion: companionPort, initiallyOpen, preview = fal
     aiThinking: game.aiThinking,
     lastPublicAction: match?.history.at(-1),
     mood: companion.mood,
-    taskNotice: game.taskNotice,
+    taskNotice: null,
   })
   const artUrl = EXPRESSION_ART[expression]
   const latestCompanionReply = latestAssistantText(companion.messages)
@@ -121,7 +131,6 @@ export function GameApp({ companion: companionPort, initiallyOpen, preview = fal
         <button className="dwc-launcher" type="button" onClick={game.openPanel} aria-label="打开鲸牌茶歇">
           <span className="dwc-launcher-art" style={{ backgroundImage: `url(${artUrl})` }} />
           <span className="dwc-launcher-copy"><strong>鲸牌</strong><small>和澜音歇一手</small></span>
-          {game.taskNotice !== null && <span className="dwc-launcher-badge" aria-label="DSH 任务有新状态" />}
         </button>
       )}
 
@@ -149,17 +158,6 @@ export function GameApp({ companion: companionPort, initiallyOpen, preview = fal
                 <button type="button" className="dwc-close-button" onClick={game.closePanel} aria-label="收起鲸牌">—</button>
               </nav>
             </header>
-
-            {game.taskNotice !== null && (
-              <section className="dwc-task-notice" aria-live="polite">
-                <Mark />
-                <span>
-                  <strong>{game.taskNotice === 'done' ? 'DSH 的任务完成了' : 'DSH 正在等你处理'}</strong>
-                  <small>{game.taskNotice === 'done' ? '这手打完再回去也来得及。' : '牌局已经存好，随时可以切回任务。'}</small>
-                </span>
-                <button type="button" onClick={game.clearTaskNotice}>知道了</button>
-              </section>
-            )}
 
             {game.error !== null && (
               <div className="dwc-error" role="alert">

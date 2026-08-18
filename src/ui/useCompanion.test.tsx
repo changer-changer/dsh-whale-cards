@@ -3,12 +3,11 @@ import { describe, expect, it, vi } from 'vitest'
 import type {
   CompanionChatReply,
   CompanionChatRequest,
+  CompanionGameContext,
   CompanionModelCatalog,
   CompanionPort,
   CompanionSnapshot,
 } from '../companion/core.ts'
-import { createMatch } from '../game/engine.ts'
-import { card } from '../game/test-helpers.ts'
 import type { TaskListSource, TaskListSnapshot } from './task-status.ts'
 import { useCompanion } from './useCompanion.ts'
 
@@ -33,7 +32,7 @@ function source(snapshot: TaskListSnapshot): TaskListSource {
 }
 
 describe('useCompanion', () => {
-  it('sends only task titles/status and public game evidence to the independent companion', async () => {
+  it('sends only task titles/status and the generic game context to the independent companion', async () => {
     const requests: CompanionChatRequest[] = []
     const port: CompanionPort = {
       snapshot: vi.fn(async () => baseSnapshot),
@@ -61,16 +60,13 @@ describe('useCompanion', () => {
         finished: { displayTitle: '写完测试', completed: true },
       },
     })
-    const base = createMatch(20260818)
-    const match = {
-      ...base,
-      history: [
-        ...base.history,
-        { at: 2, player: 'lanyin' as const, type: 'take_discard' as const, card: card('7h') },
-      ],
+    const game: CompanionGameContext = {
+      gameId: 'gin-rummy',
+      gameTitle: 'Gin Rummy',
+      summary: '第 2/3 手；你 12 分，澜音 8 分',
     }
 
-    const { result } = renderHook(() => useCompanion(port, taskSource, match))
+    const { result } = renderHook(() => useCompanion(port, taskSource, game))
     await waitFor(() => expect(result.current.snapshot?.identity.name).toBe('澜音'))
     await act(async () => result.current.send('你刚才为什么拿那张牌？'))
 
@@ -81,12 +77,35 @@ describe('useCompanion', () => {
       needsInput: 1,
       completed: 1,
     })
-    expect(requests[0]?.game?.publicSignal).toContain('拿过一张明牌')
+    expect(requests[0]?.game).toEqual(game)
     expect(JSON.stringify(requests[0])).not.toContain('secret task body')
     expect(result.current.messages.map((message) => message.text)).toEqual([
       '你刚才为什么拿那张牌？',
       '你已经看见我的牌路了。',
     ])
     expect(result.current.mood).toBe('pleased')
+  })
+
+  it('omits the game context when no game is active', async () => {
+    const requests: CompanionChatRequest[] = []
+    const port: CompanionPort = {
+      snapshot: vi.fn(async () => baseSnapshot),
+      listModels: vi.fn(async () => catalog),
+      selectModel: vi.fn(async () => baseSnapshot),
+      remember: vi.fn(async () => baseSnapshot),
+      forget: vi.fn(async () => baseSnapshot),
+      chat: vi.fn(async (request: CompanionChatRequest): Promise<CompanionChatReply> => {
+        requests.push(structuredClone(request))
+        return { text: '在呢。', mood: 'calm', state: baseSnapshot }
+      }),
+    }
+
+    const { result } = renderHook(() => useCompanion(port, undefined, null))
+    await waitFor(() => expect(result.current.snapshot?.identity.name).toBe('澜音'))
+    await act(async () => result.current.send('现在能玩什么？'))
+
+    expect(requests).toHaveLength(1)
+    expect(requests[0]?.game).toBeUndefined()
+    expect(requests[0]?.task).toBeUndefined()
   })
 })

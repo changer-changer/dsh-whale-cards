@@ -1,14 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type {
   CompanionChatReply,
+  CompanionGameContext,
   CompanionModelCatalog,
   CompanionPort,
   CompanionSnapshot,
   CompanionTaskContext,
   ModelSelection,
 } from '../companion/core.ts'
-import { publicSignal } from '../game/public-signals.ts'
-import type { MatchState } from '../game/types.ts'
 import type { CompanionUiMessage } from './CompanionPanel.tsx'
 import type { TaskListSource, TaskListSnapshot } from './task-status.ts'
 
@@ -43,16 +42,6 @@ function taskContext(source: TaskListSource | undefined): CompanionTaskContext |
   }
 }
 
-function gameContext(match: MatchState | null) {
-  if (match === null) return undefined
-  return {
-    round: match.round,
-    humanScore: match.scores.human,
-    lanyinScore: match.scores.lanyin,
-    publicSignal: publicSignal(match.history, match.stock.length).clue,
-  }
-}
-
 function errorMessage(cause: unknown): string {
   return cause instanceof Error ? cause.message : '澜音暂时没接上话，牌局仍然可以继续。'
 }
@@ -60,7 +49,7 @@ function errorMessage(cause: unknown): string {
 export function useCompanion(
   port: CompanionPort | undefined,
   taskSource: TaskListSource | undefined,
-  match: MatchState | null,
+  game: CompanionGameContext | null,
 ): CompanionController {
   const [snapshot, setSnapshot] = useState<CompanionSnapshot | null>(null)
   const [catalog, setCatalog] = useState<CompanionModelCatalog | null>(null)
@@ -148,7 +137,7 @@ export function useCompanion(
       const reply = await port.chat({
         text: trimmed,
         task: taskContext(taskSource),
-        game: gameContext(match),
+        game: game ?? undefined,
       }, controller.signal)
       setSnapshot(reply.state)
       setMood(reply.mood)
@@ -166,7 +155,7 @@ export function useCompanion(
       if (currentChat.current === controller) currentChat.current = null
       setBusy(false)
     }
-  }, [busy, match, port, taskSource])
+  }, [busy, game, port, taskSource])
 
   const clearError = useCallback(() => setError(null), [])
 

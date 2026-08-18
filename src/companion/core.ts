@@ -60,10 +60,9 @@ export interface CompanionTaskContext {
 }
 
 export interface CompanionGameContext {
-  readonly round: number
-  readonly humanScore: number
-  readonly lanyinScore: number
-  readonly publicSignal?: string
+  readonly gameId: string
+  readonly gameTitle: string
+  readonly summary?: string
 }
 
 export interface CompanionChatRequest {
@@ -154,10 +153,10 @@ function publicContext(task: CompanionTaskContext | undefined, game: CompanionGa
     lines.push(`- 运行中 ${task.running}，等待用户 ${task.needsInput}，本次已完成 ${task.completed}`)
   }
   if (game !== undefined) {
-    lines.push('当前牌局公开状态：')
-    lines.push(`- 第 ${game.round} 手；用户 ${game.humanScore} 分，澜音 ${game.lanyinScore} 分`)
-    if (game.publicSignal !== undefined && game.publicSignal.trim().length > 0) {
-      lines.push(`- 公开迹象：${game.publicSignal.trim()}`)
+    lines.push('当前游戏公开状态：')
+    lines.push(`- 游戏：${game.gameTitle}`)
+    if (game.summary !== undefined && game.summary.trim().length > 0) {
+      lines.push(`- 局面摘要：${game.summary.trim()}`)
     }
   }
   return lines.length === 0 ? '当前没有额外公开状态。' : lines.join('\n')
@@ -180,7 +179,6 @@ function systemPrompt(record: CompanionRecord, request: CompanionChatRequest): s
 
 function moodFor(request: CompanionChatRequest): CompanionChatReply['mood'] {
   if ((request.task?.needsInput ?? 0) > 0) return 'concerned'
-  if (request.game?.publicSignal?.includes('拿走') === true) return 'pleased'
   return 'calm'
 }
 

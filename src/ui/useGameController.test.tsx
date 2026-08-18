@@ -55,7 +55,7 @@ describe('Lanyin turn staging', () => {
   it('shows a separate 11-card draw step before Lanyin discards back to 10', () => {
     const before = lanyinDrawTurn()
     saveOpenMatch(before)
-    const { result } = renderHook(() => useGameController(undefined, undefined))
+    const { result } = renderHook(() => useGameController(undefined))
 
     expect(result.current.app.match?.phase).toBe('draw')
     expect(result.current.app.match?.hands.lanyin).toHaveLength(10)
@@ -85,7 +85,7 @@ describe('Lanyin turn staging', () => {
   it('pauses an 11-card turn in the background and resumes without drawing twice', () => {
     const before = lanyinDrawTurn()
     saveOpenMatch(before)
-    const { result } = renderHook(() => useGameController(undefined, undefined))
+    const { result } = renderHook(() => useGameController(undefined))
 
     act(() => vi.advanceTimersByTime(560))
     const paused = result.current.app.match as MatchState
@@ -113,7 +113,7 @@ describe('Lanyin turn staging', () => {
     const before = lanyinDrawTurn()
     const savedDiscard = drawCard(before, 'lanyin', 'stock')
     saveOpenMatch(savedDiscard)
-    const { result } = renderHook(() => useGameController(undefined, undefined))
+    const { result } = renderHook(() => useGameController(undefined))
 
     expect(result.current.app.match?.phase).toBe('discard')
     expect(result.current.app.match?.hands.lanyin).toHaveLength(11)
@@ -129,7 +129,7 @@ describe('Lanyin turn staging', () => {
   it('cancels the pending discard when the controller unmounts', () => {
     const before = lanyinDrawTurn()
     saveOpenMatch(before)
-    const { result, unmount } = renderHook(() => useGameController(undefined, undefined))
+    const { result, unmount } = renderHook(() => useGameController(undefined))
 
     act(() => vi.advanceTimersByTime(560))
     expect(result.current.app.match?.phase).toBe('discard')

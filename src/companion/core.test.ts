@@ -72,10 +72,9 @@ describe('CompanionCore', () => {
         completed: 0,
       },
       game: {
-        round: 2,
-        humanScore: 12,
-        lanyinScore: 8,
-        publicSignal: '澜音刚拿走一张公开明牌',
+        gameId: 'gin-rummy',
+        gameTitle: 'Gin Rummy',
+        summary: '第 2/3 手；你 12 分，澜音 8 分',
       },
     })
 
@@ -84,7 +83,8 @@ describe('CompanionCore', () => {
     expect(models.requests[0]?.system).toContain('你是澜音')
     expect(models.requests[0]?.system).toContain('我喜欢在长任务等待时喝乌龙茶。')
     expect(models.requests[0]?.system).toContain('修复牌桌交互')
-    expect(models.requests[0]?.system).toContain('澜音刚拿走一张公开明牌')
+    expect(models.requests[0]?.system).toContain('Gin Rummy')
+    expect(models.requests[0]?.system).toContain('第 2/3 手；你 12 分，澜音 8 分')
     expect(models.requests[0]?.selection).toEqual({ provider: 'deepseek', model: 'deepseek-chat' })
   })
 

@@ -79,10 +79,9 @@ export const companionTaskContextSchema = z.object({
 }).strict() satisfies z.ZodType<CompanionTaskContext>
 
 export const companionGameContextSchema = z.object({
-  round: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
-  humanScore: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
-  lanyinScore: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
-  publicSignal: z.string().trim().min(1).max(500).optional(),
+  gameId: z.string().trim().min(1).max(256),
+  gameTitle: z.string().trim().min(1).max(300),
+  summary: z.string().trim().min(1).max(500).optional(),
 }).strict() satisfies z.ZodType<CompanionGameContext>
 
 export const companionChatRequestSchema = z.object({
