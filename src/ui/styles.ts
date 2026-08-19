@@ -765,6 +765,31 @@ button.dwc-card--selected:hover:not(:disabled) {
   letter-spacing: 0.02em;
 }
 
+.dwc-table__tools {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin-left: auto;
+}
+
+.dwc-table__tools button {
+  min-height: 2rem;
+  padding: 0.28rem 0.62rem;
+  border: 1px solid var(--dwc-line);
+  border-radius: 0.38rem;
+  color: var(--dwc-muted);
+  background: transparent;
+  font: inherit;
+  font-size: 0.68rem;
+  cursor: pointer;
+}
+
+.dwc-table__tools button:hover {
+  color: var(--dwc-text);
+  border-color: var(--dwc-line-strong);
+  background: rgb(255 255 255 / 4%);
+}
+
 .dwc-score {
   margin: 0;
   display: flex;

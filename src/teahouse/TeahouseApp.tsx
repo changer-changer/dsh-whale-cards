@@ -8,8 +8,8 @@
  * @module teahouse/TeahouseApp
  */
 
-import { Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
-import { LANYIN_HARBOR_ART } from '../client/generated/art.ts'
+import { Component, Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
+import { TEAHOUSE_GAMES_ART, TEAHOUSE_HARBOR_ART } from '../client/generated/art.ts'
 import type { PlayerPreferences, PlayerStats } from '../game/persistence.ts'
 import { DEFAULT_PREFERENCES, DEFAULT_STATS } from '../game/persistence.ts'
 import type { TaskListSource } from '../ui/task-status.ts'
@@ -24,7 +24,6 @@ import {
   loadSlot,
   saveShellState,
   saveSlot,
-  slotExists,
   type ShellState,
 } from './storage.ts'
 import type { GameServices } from './types.ts'
@@ -58,16 +57,48 @@ function Mark(): React.JSX.Element {
   )
 }
 
+class GameBoundary extends Component<{ children: ReactNode; onBack: () => void }, { failed: boolean }> {
+  state = { failed: false }
+
+  static getDerivedStateFromError(): { failed: boolean } {
+    return { failed: true }
+  }
+
+  render(): ReactNode {
+    if (!this.state.failed) return this.props.children
+    return (
+      <section className="dth-load-failure" role="alert">
+        <span className="dth-kicker">GAME MODULE INTERRUPTED</span>
+        <strong>这一桌暂时没摆好</strong>
+        <p>存档仍然安全。先回大厅，再重新进入这款游戏。</p>
+        <button type="button" className="dth-primary-button" onClick={this.props.onBack}>返回大厅</button>
+      </section>
+    )
+  }
+}
+
 export function TeahouseApp({ initiallyOpen, preview = false, taskSource, lanyin }: TeahouseAppProps): React.JSX.Element {
   const [open, setOpen] = useState(initiallyOpen ?? false)
   const [screen, setScreen] = useState<Screen>(() => (initiallyOpen === true ? { kind: 'lobby' } : { kind: 'lobby' }))
   const [shell, setShell] = useState<ShellState>(() => loadShellState())
   const lanyinState = useSyncExternalStore(lanyin.subscribe, lanyin.getSnapshot)
   const noticeRef = useRef<'done' | 'needs_input' | null>(null)
+  const deliveredTaskNotice = useRef<'done' | 'needs_input' | null>(null)
 
   const watchingTask = screen.kind === 'game' || open
   const task = useTaskNotice(watchingTask ? taskSource : undefined, watchingTask ? 1 : null)
   noticeRef.current = task.notice
+
+  useEffect(() => {
+    if (task.notice === deliveredTaskNotice.current) return
+    deliveredTaskNotice.current = task.notice
+    if (task.notice !== null) {
+      void lanyin.notifyTask(
+        task.notice,
+        task.notice === 'done' ? '用户当前在茶歇间，DSH 任务刚刚完成。' : '用户当前在茶歇间，DSH 任务正在等待输入。',
+      )
+    }
+  }, [lanyin, task.notice])
 
   useEffect(() => {
     saveShellState(shell)
@@ -76,12 +107,17 @@ export function TeahouseApp({ initiallyOpen, preview = false, taskSource, lanyin
   useEffect(() => () => lanyin.dispose(), [lanyin])
 
   const activeGame = screen.kind === 'game' ? GAME_REGISTRY.find((entry) => entry.manifest.id === screen.gameId) : undefined
+  const defaultGame = GAME_REGISTRY.find((entry) => entry.manifest.id === shell.shell.defaultGameId) ?? GAME_REGISTRY[0]
 
   const services = useMemo<GameServices>(() => {
-    const store: Record<string, unknown> = { ...shell.preferences, stats: shell.stats }
+    const store: Record<string, unknown> = { ...shell.preferences, ...shell.shell, stats: shell.stats }
     return {
       lanyinAvailable: () => lanyin.getSnapshot().modelLive,
       lanyinRemark: (event, context) => { lanyin.remark(event, context) },
+      playMode: () => shell.shell.playMode,
+      beginAgentGame: (input) => shell.shell.playMode === 'agent' ? lanyin.beginGameAgent(input) : Promise.resolve(false),
+      chooseAgentAction: (input) => shell.shell.playMode === 'agent' ? lanyin.chooseGameAction(input) : Promise.resolve(null),
+      endAgentGame: (summary) => lanyin.endGameAgent(summary),
       saveState: (state) => {
         if (activeGame === undefined) return
         saveSlot(activeGame.manifest.id, state)
@@ -110,7 +146,7 @@ export function TeahouseApp({ initiallyOpen, preview = false, taskSource, lanyin
         }))
       },
     }
-  }, [activeGame, lanyin, shell.preferences, shell.stats, task])
+  }, [activeGame, lanyin, shell.preferences, shell.shell, shell.stats, task])
 
   const closeAll = useCallback(() => {
     setOpen(false)
@@ -138,14 +174,30 @@ export function TeahouseApp({ initiallyOpen, preview = false, taskSource, lanyin
       <style id={STYLE_ELEMENT_ID}>{TEAHOUSE_STYLES}</style>
 
       {!open && (
-        <button className="dth-launcher" type="button" onClick={() => { setOpen(true) }} aria-label="打开茶歇间">
-          <span className="dth-launcher-art" style={{ backgroundImage: `url(${LANYIN_HARBOR_ART})` }} />
-          <span className="dth-launcher-copy">
-            <strong>茶歇间</strong>
-            <small>{lanyinState.modelLive ? `澜音 ${EXPRESSION_FACE[expression]} 候着` : '和澜音歇一手'}</small>
-          </span>
-          {task.notice !== null && <span className="dth-launcher-badge" aria-label="DSH 任务有新状态" />}
-        </button>
+        <div className="dth-launcher-cluster">
+          <button className="dth-launcher" type="button" onClick={() => { setScreen({ kind: 'lobby' }); setOpen(true) }} aria-label="打开茶歇间大厅">
+            <span className="dth-launcher-art" style={{ backgroundImage: `url(${TEAHOUSE_HARBOR_ART})` }} />
+            <span className="dth-launcher-copy">
+              <strong>茶歇间</strong>
+              <small>{lanyinState.modelLive ? `鲸鱼娘澜音 ${EXPRESSION_FACE[expression]} 候着` : '去港湾找澜音'}</small>
+            </span>
+            {task.notice !== null && <span className="dth-launcher-badge" aria-label="DSH 任务有新状态" />}
+          </button>
+          <button
+            className="dth-launcher-quick"
+            type="button"
+            onClick={() => {
+              if (defaultGame === undefined) return
+              setScreen({ kind: 'game', gameId: defaultGame.manifest.id })
+              setOpen(true)
+            }}
+            aria-label={`直接进入默认游戏：${defaultGame?.manifest.title ?? '茶歇间'}`}
+            title={`一键进入 ${defaultGame?.manifest.title ?? '默认游戏'}`}
+          >
+            <span aria-hidden="true">▶</span>
+            <small>直达</small>
+          </button>
+        </div>
       )}
 
       {open && (
@@ -154,7 +206,7 @@ export function TeahouseApp({ initiallyOpen, preview = false, taskSource, lanyin
             <header className="dth-topbar">
               <div className="dth-brand">
                 <Mark />
-                <span><strong>{screen.kind === 'game' && activeGame !== undefined ? activeGame.manifest.title : 'DSH 茶歇间'}</strong><small>TEAHOUSE · 精品小游戏馆</small></span>
+                <span><strong>{screen.kind === 'game' && activeGame !== undefined ? activeGame.manifest.title : '深夜港湾'}</strong><small>DSH TEAHOUSE · CURATED PLAY</small></span>
               </div>
               {screen.kind === 'game' && activeGame !== undefined && (
                 <nav className="dth-top-actions">
@@ -162,6 +214,7 @@ export function TeahouseApp({ initiallyOpen, preview = false, taskSource, lanyin
                 </nav>
               )}
               <div className="dth-top-right">
+                <span className="dth-live-dot"><i /> OPEN LATE</span>
                 <span className="dth-stats" aria-label="茶歇统计">
                   {stats.matchesPlayed > 0 ? `${stats.matchesPlayed} 局 · 胜 ${stats.matchesWon}` : '第一局还没开张'}
                 </span>
@@ -176,23 +229,29 @@ export function TeahouseApp({ initiallyOpen, preview = false, taskSource, lanyin
                   <strong>{task.notice === 'done' ? 'DSH 的任务完成了' : 'DSH 正在等你处理'}</strong>
                   <small>{task.notice === 'done' ? '这局打完再回去也来得及。' : '牌局已经存好，随时可以切回任务。'}</small>
                 </span>
-                <button type="button" onClick={task.clear}>知道了</button>
+                <button type="button" onClick={() => { task.clear(); closeAll() }}>返回任务</button>
               </section>
             )}
 
-            <div className="dth-body">
+            <div className={`dth-body dth-body--${screen.kind}`}>
               {screen.kind === 'lobby' ? (
                 <Lobby
                   lanyinState={lanyinState}
                   stats={stats}
+                  defaultGameId={defaultGame?.manifest.id ?? 'gin-rummy'}
+                  playMode={shell.shell.playMode}
                   onPick={(gameId) => setScreen({ kind: 'game', gameId })}
+                  onDefaultGame={(defaultGameId) => setShell((previous) => ({ ...previous, shell: { ...previous.shell, defaultGameId } }))}
+                  onPlayMode={(playMode) => setShell((previous) => ({ ...previous, shell: { ...previous.shell, playMode } }))}
                 />
               ) : activeGame === undefined ? (
                 <p className="dth-empty">这款游戏不在今天的茶单上。</p>
               ) : (
-                <Suspense fallback={<p className="dth-empty">正在沏茶……</p>}>
-                  <activeGame.View services={services} preview={preview} />
-                </Suspense>
+                <GameBoundary key={`${activeGame.manifest.id}:${shell.shell.playMode}`} onBack={() => setScreen({ kind: 'lobby' })}>
+                  <Suspense fallback={<div className="dth-game-loading" role="status"><span /><strong>正在摆好这一桌</strong><small>装载规则、存档与港湾灯光…</small></div>}>
+                    <activeGame.View services={services} preview={preview} />
+                  </Suspense>
+                </GameBoundary>
               )}
             </div>
 
@@ -208,41 +267,67 @@ export function TeahouseApp({ initiallyOpen, preview = false, taskSource, lanyin
   )
 }
 
-function Lobby({ lanyinState, stats, onPick }: {
+function Lobby({ lanyinState, stats, defaultGameId, playMode, onPick, onDefaultGame, onPlayMode }: {
   lanyinState: ReturnType<LanyinService['getSnapshot']>
   stats: PlayerStats
+  defaultGameId: string
+  playMode: 'classic' | 'agent'
   onPick: (gameId: string) => void
+  onDefaultGame: (gameId: string) => void
+  onPlayMode: (mode: 'classic' | 'agent') => void
 }): React.JSX.Element {
   return (
     <div className="dth-lobby">
-      <section className="dth-lobby-hero" style={{ backgroundImage: `url(${LANYIN_HARBOR_ART})` }}>
+      <section className="dth-lobby-hero" style={{ backgroundImage: `url(${TEAHOUSE_HARBOR_ART})` }}>
+        <div className="dth-lobby-edition"><span>08 / 19</span><i />雨夜茶单</div>
         <div className="dth-lobby-hero-copy">
-          <span className="dth-lobby-face" role="img" aria-label={`澜音：${EXPRESSION_LABELS[lanyinState.expression]}`}>
+          <span className="dth-lobby-face" role="img" aria-label={`鲸鱼娘澜音：${EXPRESSION_LABELS[lanyinState.expression]}`}>
             {EXPRESSION_FACE[lanyinState.expression]}
           </span>
           <div>
-            <h1>等任务的这一刻，喝口茶</h1>
-            <p>{lanyinState.modelLive ? '澜音在桌边等你，随时聊两句。' : '澜音在打盹（模型未连接），牌照打。'}</p>
+            <span className="dth-kicker">A ROOM BETWEEN TASKS</span>
+            <h1>让脑子换一种方式醒着</h1>
+            <p>{lanyinState.modelLive ? '鲸鱼娘澜音已经温好茶，也替你听着 DSH 的回声。选一桌，十分钟后再返航。' : '澜音暂时在听远处的鲸歌，但今晚的每一桌仍然可以独立开局。'}</p>
           </div>
         </div>
       </section>
 
+      <div className="dth-section-heading"><div><span className="dth-kicker">TONIGHT'S TABLES</span><h2>今晚玩什么</h2></div><p>每款都能随时存下，任务有动静时立刻回去。</p></div>
+
+      <section className="dth-play-config" aria-label="茶歇游玩设置">
+        <div className="dth-mode-switch" role="group" aria-label="对手模式">
+          <button type="button" className={playMode === 'classic' ? 'active' : ''} onClick={() => onPlayMode('classic')}>
+            <strong>经典模式</strong><small>本地逻辑 · 不消耗 Token</small>
+          </button>
+          <button type="button" className={playMode === 'agent' ? 'active' : ''} disabled={!lanyinState.modelLive} onClick={() => onPlayMode('agent')}>
+            <strong>澜音 Agent</strong><small>{lanyinState.modelLive ? '真人感对局 · 会消耗 Token' : '先在下方接入模型'}</small>
+          </button>
+        </div>
+        <label className="dth-default-game">
+          <span><strong>悬浮窗一键直达</strong><small>右侧小按钮会直接进入这款游戏</small></span>
+          <select value={defaultGameId} onChange={(event) => onDefaultGame(event.target.value)} aria-label="默认直达游戏">
+            {GAME_REGISTRY.map(({ manifest }) => <option key={manifest.id} value={manifest.id}>{manifest.title}</option>)}
+          </select>
+        </label>
+      </section>
+
       <section className="dth-lobby-grid" aria-label="游戏列表">
-        {GAME_REGISTRY.map(({ manifest }) => {
-          const hasSave = slotExists(manifest.id)
+        {GAME_REGISTRY.map(({ manifest, hasSave: readHasSave }, index) => {
+          const hasSave = readHasSave()
           return (
-            <button key={manifest.id} type="button" className="dth-game-card" style={{ '--dth-card-accent': manifest.accent } as React.CSSProperties} onClick={() => { onPick(manifest.id) }}>
-              <span className="dth-game-glyph" aria-hidden="true">{manifest.glyph}</span>
+            <button key={manifest.id} type="button" className={`dth-game-card${index === 0 ? ' featured' : ''}`} style={{ '--dth-card-accent': manifest.accent, '--dth-card-art': `url(${index === 0 ? TEAHOUSE_HARBOR_ART : TEAHOUSE_GAMES_ART})` } as React.CSSProperties} onClick={() => { onPick(manifest.id) }} aria-label={`${hasSave ? '继续' : '开始'}${manifest.title}`}>
+              <span className="dth-game-card-art" aria-hidden="true"><i>{manifest.glyph}</i></span>
               <span className="dth-game-copy">
-                <strong>{manifest.title}{hasSave && <em className="dth-game-resume">有存档</em>}</strong>
-                <small>{manifest.tagline}</small>
+                <span className="dth-game-index">0{index + 1} · {intensityLabel(manifest.intensity)}</span>
+                <strong>{manifest.title}{hasSave && <em className="dth-game-resume">继续</em>}</strong>
+                <small className="dth-game-tagline">{manifest.tagline}</small>
                 <small className="dth-game-why">{manifest.why}</small>
                 <span className="dth-game-tags">
                   <i>{manifest.duration}</i>
-                  <i>{intensityLabel(manifest.intensity)}</i>
+                  <i>{hasSave ? '进度已保存' : '新牌局'}</i>
                 </span>
               </span>
-              <span className="dth-game-go" aria-hidden="true">→</span>
+              <span className="dth-game-go" aria-hidden="true">入座 <i>↗</i></span>
             </button>
           )
         })}

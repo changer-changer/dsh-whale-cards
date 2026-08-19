@@ -17,9 +17,12 @@ import {
   type PlayerStats,
   type SavedAppState,
 } from '../game/persistence.ts'
+import type { TeahousePlayMode } from './types.ts'
 
 export interface ShellPreferences {
   readonly lanyinDock: boolean
+  readonly defaultGameId: string
+  readonly playMode: TeahousePlayMode
 }
 
 export interface ShellState {
@@ -33,7 +36,11 @@ const SLOT_PREFIX = 'dsh-teahouse:save:'
 const SHELL_KEY = 'dsh-teahouse:shell:v1'
 const MIGRATION_DONE_KEY = 'dsh-teahouse:migrated:v1'
 
-export const DEFAULT_SHELL_PREFERENCES: ShellPreferences = { lanyinDock: true }
+export const DEFAULT_SHELL_PREFERENCES: ShellPreferences = {
+  lanyinDock: true,
+  defaultGameId: 'gin-rummy',
+  playMode: 'classic',
+}
 
 export function gameSlotKey(gameId: string): string {
   return `${SLOT_PREFIX}${gameId}:v1`
@@ -52,6 +59,10 @@ export function loadSlot(gameId: string): unknown {
 
 export function saveSlot(gameId: string, state: unknown): void {
   try {
+    if (state === null) {
+      localStorage.removeItem(gameSlotKey(gameId))
+      return
+    }
     localStorage.setItem(gameSlotKey(gameId), JSON.stringify(state))
   } catch {
     /* quota or unavailable — saves are best-effort */

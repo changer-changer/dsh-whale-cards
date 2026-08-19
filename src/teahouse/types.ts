@@ -58,6 +58,59 @@ export interface TeahouseModelsResult {
   readonly error?: string
 }
 
+/** The two deliberately separate play paths. Classic never calls a model. */
+export type TeahousePlayMode = 'classic' | 'agent'
+
+export interface GameAgentLegalAction {
+  /** Stable engine-owned id. The model may choose only one of these ids. */
+  readonly id: string
+  /** Short human/model-readable explanation of the action. */
+  readonly label: string
+}
+
+export interface TeahouseAgentStartRequest {
+  readonly sessionId: string
+  readonly provider: string
+  readonly model: string
+  readonly gameId: string
+  readonly gameTitle: string
+  readonly rules: string
+  readonly soul: string
+  readonly memories: readonly string[]
+}
+
+export interface TeahouseAgentTurnRequest {
+  readonly sessionId: string
+  readonly situation: string
+  readonly legalActions: readonly GameAgentLegalAction[]
+}
+
+export interface TeahouseAgentChatRequest {
+  readonly sessionId: string
+  readonly text: string
+  readonly situation?: string
+}
+
+export interface TeahouseAgentEventRequest {
+  readonly sessionId: string
+  readonly event: 'task_done' | 'task_needs_input' | 'game_finished'
+  readonly context: string
+}
+
+export interface TeahouseAgentEndRequest {
+  readonly sessionId: string
+}
+
+export interface TeahouseAgentDecision {
+  readonly actionId: string
+  readonly line: string
+  readonly intent: 'fair' | 'merciful' | 'ruthless' | 'mischievous'
+}
+
+export type TeahouseAgentResult<T> =
+  | { readonly ok: true; readonly value: T }
+  | { readonly ok: false; readonly code: 'unavailable' | 'bad-request' | 'not-found' | 'provider-error'; readonly message: string }
+
 /* ------------------------------------------------------------------ *
  * GameModule — the seam game authors implement
  * ------------------------------------------------------------------ */
@@ -90,6 +143,17 @@ export interface GameServices {
    * Coalesced and rate-limited by the shell — safe to call on every event.
    */
   readonly lanyinRemark: (event: string, context: string) => void
+  /** Current opponent mode. Classic is deterministic and never spends tokens. */
+  readonly playMode: () => TeahousePlayMode
+  /** Open one real Harness Agent Session for this match. No-op in classic mode. */
+  readonly beginAgentGame: (input: { gameId: string; gameTitle: string; rules: string }) => Promise<boolean>
+  /** Let that Agent select exactly one engine-declared legal action. */
+  readonly chooseAgentAction: (input: {
+    situation: string
+    legalActions: readonly GameAgentLegalAction[]
+  }) => Promise<TeahouseAgentDecision | null>
+  /** Close the active match session. Long-term memory remains separate. */
+  readonly endAgentGame: (summary?: string) => Promise<void>
   /** Persist a JSON save under this game's slot. Opaque to the shell. */
   readonly saveState: (state: unknown) => void
   /** Load the latest save for this game, or null. */

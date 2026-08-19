@@ -1,0 +1,35 @@
+{
+  "generated": "2026-08-19T03:25:00.000Z",
+  "sections": [
+    {
+      "id": "mockups",
+      "label": "Mockups",
+      "groups": [
+        {
+          "slug": "harbor-teahouse-rebuild",
+          "files": [
+            {
+              "label": "可点击产品原型",
+              "path": "./mockups/harbor-teahouse-rebuild/index.html"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "design-systems",
+      "label": "Design Systems",
+      "groups": [
+        {
+          "slug": "harbor-teahouse-product",
+          "files": [
+            {
+              "label": "UI Kit 状态总览",
+              "path": "./design-systems/harbor-teahouse-product/ui-kit-harness/index.html"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

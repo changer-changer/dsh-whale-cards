@@ -20,6 +20,8 @@ export interface TableViewProps {
   readonly onDiscard: (intent: DiscardIntent) => void
   readonly onPassWall: () => void
   readonly onChat: () => void
+  readonly onRules?: () => void
+  readonly onSettings?: () => void
 }
 
 function turnStatus(match: MatchState, aiThinking: boolean): string {
@@ -49,6 +51,8 @@ export function TableView({
   onDiscard,
   onPassWall,
   onChat,
+  onRules,
+  onSettings,
 }: TableViewProps) {
   const humanHand = match.hands.human
   const selectedCard = humanHand.find((card) => card.id === selectedCardId)
@@ -82,6 +86,12 @@ export function TableView({
           <span className="dwc-eyebrow">DSH / BREAK SESSION</span>
           <strong>鲸牌茶歇</strong>
         </div>
+        {onRules !== undefined || onSettings !== undefined ? (
+          <nav className="dwc-table__tools" aria-label="牌桌帮助">
+            {onRules !== undefined ? <button type="button" onClick={onRules}>规则</button> : null}
+            {onSettings !== undefined ? <button type="button" onClick={onSettings}>设置</button> : null}
+          </nav>
+        ) : null}
         <dl className="dwc-score" aria-label="当前比分">
           <div>
             <dt>你</dt>
@@ -103,7 +113,7 @@ export function TableView({
           <img
             className="dwc-companion__art"
             src={artUrl}
-            alt="澜音坐在深夜港湾茶室的牌桌旁"
+            alt="鲸鱼娘澜音坐在深夜港湾茶室的牌桌旁，窗外鲸影掠过海面"
             draggable={false}
           />
           <div className="dwc-companion__shade" aria-hidden="true" />

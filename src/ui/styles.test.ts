@@ -5,6 +5,7 @@ import postcss, {
   type Rule,
 } from 'postcss'
 import { describe, expect, it } from 'vitest'
+import { TEAHOUSE_STYLES } from '../teahouse/teahouse-styles.ts'
 import { GAME_STYLES } from './styles.ts'
 
 function declarations(rule: Rule): Readonly<Record<string, string>> {
@@ -71,6 +72,37 @@ describe('DSH launcher placement', () => {
       right: 'max(0.75rem, env(safe-area-inset-right))',
       top: 'max(4.25rem, calc(env(safe-area-inset-top) + 3.5rem))',
       width: '3.75rem',
+    })
+  })
+})
+
+describe('teahouse viewport containment', () => {
+  const root = postcss.parse(TEAHOUSE_STYLES)
+
+  function ruleFor(selector: string): Rule {
+    let matched: Rule | undefined
+    root.walkRules((rule) => {
+      if (rule.selector === selector && mediaQuery(rule) === null) matched = rule
+    })
+    expect(matched, `${selector} should have a base rule`).toBeDefined()
+    return matched as Rule
+  }
+
+  it('anchors the open surface to the viewport instead of an auto-height shadow child', () => {
+    expect(declarations(ruleFor('.dth-overlay'))).toMatchObject({
+      inset: '0',
+      position: 'fixed',
+    })
+  })
+
+  it('keeps the game shell measurable and lets the body scroll without clipping controls', () => {
+    expect(declarations(ruleFor('.dth-shell'))).toMatchObject({
+      'max-height': 'calc(100dvh - 1rem)',
+      'min-height': 'min(44rem, calc(100dvh - 1rem))',
+    })
+    expect(declarations(ruleFor('.dth-body'))).toMatchObject({
+      'min-height': '0',
+      'overflow-y': 'auto',
     })
   })
 })

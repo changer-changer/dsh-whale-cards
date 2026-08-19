@@ -1,0 +1,23 @@
+:root {
+  --harbor-ink-950: #071014;
+  --harbor-ink-900: #0b171c;
+  --harbor-ink-850: #0e1c22;
+  --harbor-ink-800: #102027;
+  --harbor-ink-750: #152930;
+  --harbor-line: #263b42;
+  --harbor-line-strong: #405a61;
+  --harbor-ivory: #f3f0e8;
+  --harbor-mist: #a5b5b5;
+  --harbor-faint: #75898b;
+  --harbor-tide: #66c9bf;
+  --harbor-brass: #d7aa63;
+  --harbor-coral: #d97d6c;
+  --harbor-display: ui-serif, "Iowan Old Style", "Songti SC", "STSong", serif;
+  --harbor-body: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --harbor-radius-control: 0.35rem;
+  --harbor-radius-panel: 0.65rem;
+  --harbor-radius-shell: 0.9rem;
+  --harbor-shadow-float: 0 22px 64px rgb(0 0 0 / 38%);
+  --harbor-motion-fast: 140ms;
+  --harbor-motion-base: 220ms;
+}

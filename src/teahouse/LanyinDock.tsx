@@ -25,7 +25,7 @@ const EXPRESSION_FACE: Readonly<Record<string, string>> = {
 
 export function LanyinDock({ lanyin }: { lanyin: LanyinService }): React.JSX.Element {
   const state = useSyncExternalStore(lanyin.subscribe, lanyin.getSnapshot)
-  const [tab, setTab] = useState<'chat' | 'memory' | 'model'>('chat')
+  const [tab, setTab] = useState<'chat' | 'soul' | 'memory' | 'model'>('chat')
   const [draft, setDraft] = useState('')
   const logRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -42,18 +42,27 @@ export function LanyinDock({ lanyin }: { lanyin: LanyinService }): React.JSX.Ele
     void lanyin.sendChat(text)
   }
 
+  const sendQuickPrompt = (text: string): void => {
+    if (state.chatBusy) return
+    setTab('chat')
+    void lanyin.sendChat(text)
+  }
+
   return (
-    <aside className="dth-dock" aria-label="澜音">
+    <aside className="dth-dock" aria-label="鲸鱼娘澜音">
       <div className="dth-dock-bar">
         <span className="dth-dock-face" role="img" aria-label={`澜音（${EXPRESSION_LABELS[state.expression]}）`}>
           {EXPRESSION_FACE[state.expression] ?? '•ᴗ•'}
         </span>
         <div className="dth-dock-title">
-          <strong>澜音</strong>
-          <small>{state.modelLive ? (state.chosen ? state.chosen.model : '挑选模型中') : '模型未连接 · 牌照打'}</small>
+          <strong>鲸鱼娘 · 澜音</strong>
+          <small>{state.agentSessionId !== null
+            ? `${state.agentGameTitle ?? '牌局'} · Agent Session ${state.agentBusy ? '思考中' : '在线'}`
+            : state.modelLive ? (state.chosen ? `${state.chosen.model} · 守着 DSH 的潮汐` : '正在听 DSH 的回声') : '模型未连接 · 仍会守着牌桌'}</small>
         </div>
         <nav className="dth-dock-actions" aria-label="澜音面板">
           <button type="button" className={`dth-dock-toggle${tab === 'chat' ? ' active' : ''}`} onClick={() => { setTab('chat') }}>聊天</button>
+          <button type="button" className={`dth-dock-toggle${tab === 'soul' ? ' active' : ''}`} onClick={() => { setTab('soul') }}>Soul</button>
           <button type="button" className={`dth-dock-toggle${tab === 'memory' ? ' active' : ''}`} onClick={() => { setTab('memory') }}>记忆 {state.memories.length > 0 ? `(${state.memories.length})` : ''}</button>
           <button type="button" className={`dth-dock-toggle${tab === 'model' ? ' active' : ''}`} onClick={() => { setTab('model') }}>模型</button>
         </nav>
@@ -75,6 +84,13 @@ export function LanyinDock({ lanyin }: { lanyin: LanyinService }): React.JSX.Ele
             ))}
             {state.chatBusy && <div className="dth-bubble assistant">…</div>}
           </div>
+          {state.agentSessionId !== null && (
+            <div className="dth-agent-prompts" aria-label="牌局快捷对话">
+              <button type="button" disabled={state.chatBusy} onClick={() => { sendQuickPrompt('我不会玩，请结合当前牌局，用最简单的话教我这一步该考虑什么。') }}>教我这一步</button>
+              <button type="button" disabled={state.chatBusy} onClick={() => { sendQuickPrompt('认真一点，拿出你最强的水平和我玩。') }}>认真点</button>
+              <button type="button" disabled={state.chatBusy} onClick={() => { sendQuickPrompt('澜音，放我一马嘛。你可以手软一点，但规则不许变。') }}>放我一马</button>
+            </div>
+          )}
           <form
             className="dth-chat-input"
             onSubmit={(event) => { event.preventDefault(); send() }}
@@ -93,8 +109,24 @@ export function LanyinDock({ lanyin }: { lanyin: LanyinService }): React.JSX.Ele
       )}
 
       {tab === 'memory' && <MemoryPanel lanyin={lanyin} memories={state.memories} />}
+      {tab === 'soul' && <SoulPanel soul={state.soul} sessionId={state.agentSessionId} error={state.agentError} />}
       {tab === 'model' && <ModelPanel lanyin={lanyin} />}
     </aside>
+  )
+}
+
+function SoulPanel({ soul, sessionId, error }: { soul: string; sessionId: string | null; error: string | null }): React.JSX.Element {
+  return (
+    <div className="dth-side dth-soul-panel">
+      <div><span className="dth-kicker">LANYIN / SOUL</span><h4>她是谁</h4></div>
+      {soul.split('\n').map((line) => <p key={line}>{line}</p>)}
+      <dl>
+        <div><dt>当前 Agent</dt><dd>{sessionId ?? '未开启牌局 Session'}</dd></div>
+        <div><dt>上下文</dt><dd>每局独立；由 Harness 自动按压力压缩</dd></div>
+        <div><dt>长期记忆</dt><dd>只读取右侧「记忆」中的可见条目</dd></div>
+      </dl>
+      {error !== null && <p className="dth-agent-error">最近一次 Agent 调用：{error}</p>}
+    </div>
   )
 }
 

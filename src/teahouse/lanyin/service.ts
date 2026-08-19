@@ -11,7 +11,8 @@
 
 import { dialogueLine } from '../../ui/dialogue.ts'
 import type { TeahouseCaller } from '../rpc-client.ts'
-import { buildSystemPrompt, expressionForEvent, type LanyinExpression } from './persona.ts'
+import type { GameAgentLegalAction, TeahouseAgentDecision } from '../types.ts'
+import { buildSystemPrompt, expressionForEvent, LANYIN_SOUL, LANYIN_SOUL_SUMMARY, type LanyinExpression } from './persona.ts'
 import { createMemoryStore, extractRememberRequest, type MemoryEntry, type MemoryStore } from './memory.ts'
 
 export interface ChatTurn {
@@ -31,11 +32,28 @@ export interface LanyinState {
   /** True when a model round-trip is currently possible. */
   readonly modelLive: boolean
   readonly memories: readonly MemoryEntry[]
+  readonly soul: string
+  readonly agentSessionId: string | null
+  readonly agentGameTitle: string | null
+  readonly agentBusy: boolean
+  readonly agentError: string | null
 }
 
 const CHAT_HISTORY_LIMIT = 24
 const REMARK_MIN_INTERVAL_MS = 6000
 const REMARK_MAX_CHARS = 120
+
+interface ActiveGameAgent {
+  readonly sessionId: string
+  readonly gameId: string
+  readonly gameTitle: string
+  readonly started: Promise<boolean>
+}
+
+function randomSessionId(): string {
+  const id = globalThis.crypto?.randomUUID?.() ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
+  return `lanyin-game-${id}`
+}
 
 export class LanyinService {
   private readonly listeners = new Set<() => void>()
@@ -45,6 +63,7 @@ export class LanyinService {
   private lastRemarkAt = 0
   private remarkTimer: ReturnType<typeof setTimeout> | null = null
   private pendingRemark: { event: string; context: string } | null = null
+  private activeGameAgent: ActiveGameAgent | null = null
 
   constructor(caller: TeahouseCaller | null) {
     this.caller = caller
@@ -58,6 +77,11 @@ export class LanyinService {
       modelsError: null,
       modelLive: false,
       memories: this.memory.list(),
+      soul: LANYIN_SOUL_SUMMARY,
+      agentSessionId: null,
+      agentGameTitle: null,
+      agentBusy: false,
+      agentError: null,
     }
     if (caller !== null) void this.refreshModels()
   }
@@ -128,6 +152,106 @@ export class LanyinService {
 
   /* ---------------- chat ---------------- */
 
+  async beginGameAgent(input: { gameId: string; gameTitle: string; rules: string }): Promise<boolean> {
+    const chosen = this.state.chosen
+    if (this.caller === null || chosen === null) return false
+    if (this.activeGameAgent !== null) await this.endGameAgent()
+
+    const sessionId = randomSessionId()
+    let resolveStarted!: (value: boolean) => void
+    const started = new Promise<boolean>((resolve) => { resolveStarted = resolve })
+    const active: ActiveGameAgent = { sessionId, gameId: input.gameId, gameTitle: input.gameTitle, started }
+    this.activeGameAgent = active
+    this.set({ agentSessionId: sessionId, agentGameTitle: input.gameTitle, agentBusy: true, agentError: null })
+
+    const result = await this.caller.startAgent({
+      sessionId,
+      provider: chosen.provider,
+      model: chosen.model,
+      gameId: input.gameId,
+      gameTitle: input.gameTitle,
+      rules: input.rules,
+      soul: LANYIN_SOUL,
+      memories: this.memory.list().map((entry) => entry.text),
+    })
+    const ok = result.ok
+    resolveStarted(ok)
+    if (this.activeGameAgent === active) {
+      this.set({
+        agentBusy: false,
+        agentError: result.ok ? null : result.message,
+        ...(ok ? {} : { agentSessionId: null, agentGameTitle: null }),
+      })
+      if (!ok) this.activeGameAgent = null
+    }
+    return ok
+  }
+
+  async chooseGameAction(input: {
+    situation: string
+    legalActions: readonly GameAgentLegalAction[]
+  }): Promise<TeahouseAgentDecision | null> {
+    const active = this.activeGameAgent
+    if (this.caller === null || active === null || !(await active.started)) return null
+    this.set({ agentBusy: true, agentError: null, expression: 'thinking' })
+    const result = await this.caller.turnAgent({
+      sessionId: active.sessionId,
+      situation: input.situation,
+      legalActions: input.legalActions,
+    })
+    if (this.activeGameAgent !== active) return null
+    if (!result.ok) {
+      this.set({ agentBusy: false, agentError: result.message, expression: 'worried' })
+      return null
+    }
+    const line = result.value.line.trim()
+    this.set({
+      agentBusy: false,
+      agentError: null,
+      expression: result.value.intent === 'ruthless' ? 'proud' : 'talking',
+      chat: line === '' ? this.state.chat : [...this.state.chat, { role: 'assistant' as const, text: line, at: Date.now() }].slice(-CHAT_HISTORY_LIMIT),
+    })
+    return result.value
+  }
+
+  async endGameAgent(summary?: string): Promise<void> {
+    const active = this.activeGameAgent
+    if (this.caller === null || active === null) return
+    this.activeGameAgent = null
+    if (await active.started) {
+      if (summary?.trim()) {
+        const event = await this.caller.eventAgent({
+          sessionId: active.sessionId,
+          event: 'game_finished',
+          context: summary,
+        })
+        if (event.ok && event.value.text.trim() !== '') {
+          this.set({ chat: [...this.state.chat, { role: 'assistant' as const, text: event.value.text, at: Date.now() }].slice(-CHAT_HISTORY_LIMIT) })
+        }
+      }
+      await this.caller.endAgent({ sessionId: active.sessionId })
+    }
+    this.set({ agentSessionId: null, agentGameTitle: null, agentBusy: false })
+  }
+
+  async notifyTask(status: 'done' | 'needs_input', context: string): Promise<void> {
+    const active = this.activeGameAgent
+    if (this.caller === null || active === null || !(await active.started)) {
+      this.remark(status === 'done' ? 'task_done' : 'task_needs_input', context)
+      return
+    }
+    const result = await this.caller.eventAgent({
+      sessionId: active.sessionId,
+      event: status === 'done' ? 'task_done' : 'task_needs_input',
+      context,
+    })
+    if (this.activeGameAgent !== active || !result.ok) return
+    this.set({
+      expression: 'talking',
+      chat: [...this.state.chat, { role: 'assistant' as const, text: result.value.text, at: Date.now() }].slice(-CHAT_HISTORY_LIMIT),
+    })
+  }
+
   async sendChat(text: string): Promise<void> {
     const clean = text.replace(/\s+/g, ' ').trim()
     if (clean === '' || this.state.chatBusy) return
@@ -138,10 +262,18 @@ export class LanyinService {
     const history: ChatTurn[] = [...this.state.chat, { role: 'user', text: clean, at: Date.now() }]
     this.set({ chat: history.slice(-CHAT_HISTORY_LIMIT), chatBusy: true, chatError: null, expression: 'thinking' })
 
-    const reply = await this.generateReply(
-      buildSystemPrompt({ memories: this.memory.list(), situation: '用户在茶歇间和你聊天。' }),
-      history.map((turn) => ({ role: turn.role, text: turn.text })),
-    )
+    const active = this.activeGameAgent
+    let reply: string | null = null
+    if (this.caller !== null && active !== null && await active.started) {
+      const result = await this.caller.chatAgent({ sessionId: active.sessionId, text: clean })
+      if (result.ok) reply = result.value.text
+    }
+    if (reply === null) {
+      reply = await this.generateReply(
+        buildSystemPrompt({ memories: this.memory.list(), situation: '用户在茶歇间和你聊天。' }),
+        history.map((turn) => ({ role: turn.role, text: turn.text })),
+      )
+    }
 
     const next: ChatTurn[] = [...history]
     let expression: LanyinExpression = 'calm'
@@ -212,6 +344,7 @@ export class LanyinService {
       clearTimeout(this.remarkTimer)
       this.remarkTimer = null
     }
+    void this.endGameAgent()
   }
 }
 
