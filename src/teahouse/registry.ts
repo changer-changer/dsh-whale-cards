@@ -11,6 +11,7 @@ import type { GameManifest, GameViewProps } from './types.ts'
 import { ginRummyGame } from '../games/gin-rummy/module.tsx'
 import { harborPairsGame } from '../games/harbor-pairs/module.tsx'
 import { harborClashGame } from '../games/harbor-clash/module.tsx'
+import { HARBOR_CLASH_ART } from '../client/generated/art.ts'
 
 export interface GameRegistration {
   readonly manifest: GameManifest
@@ -30,7 +31,7 @@ export const GAME_REGISTRY: readonly GameRegistration[] = [
     clearSave: harborPairsGame.clearSave,
   },
   {
-    manifest: harborClashGame.manifest,
+    manifest: { ...harborClashGame.manifest, cover: HARBOR_CLASH_ART },
     View: lazy(async () => ({ default: harborClashGame.View })) as ComponentType<GameViewProps>,
     clearSave: harborClashGame.clearSave,
   },

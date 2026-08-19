@@ -25,11 +25,12 @@ export const TEAHOUSE_STYLES = String.raw`
   --dth-accent: 195;
   --dth-accent-color: hsl(var(--dth-accent) 55% 62%);
   --dth-accent-soft: hsl(var(--dth-accent) 40% 22%);
+  --dth-ease: cubic-bezier(0.32, 0.72, 0, 1);
   --dth-shadow: 0 22px 64px rgb(0 0 0 / 38%);
   position: relative;
   min-height: 100%;
   color: var(--dth-text);
-  font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-family: "Avenir Next", "SF Pro Display", "PingFang SC", "Microsoft YaHei", ui-sans-serif, sans-serif;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   color-scheme: dark;
@@ -59,7 +60,7 @@ export const TEAHOUSE_STYLES = String.raw`
   cursor: pointer;
   text-align: left;
   isolation: isolate;
-  transition: transform 160ms ease, border-color 160ms ease;
+  transition: transform 480ms var(--dth-ease), border-color 280ms var(--dth-ease), box-shadow 480ms var(--dth-ease);
 }
 
 .dth-launcher::after {
@@ -73,6 +74,7 @@ export const TEAHOUSE_STYLES = String.raw`
 .dth-launcher:hover {
   border-color: var(--dth-teal);
   transform: translateY(-2px);
+  box-shadow: 0 22px 60px rgb(0 0 0 / 46%), 0 0 0 1px rgb(111 210 202 / 12%);
 }
 
 .dth-launcher-art {
@@ -221,19 +223,19 @@ export const TEAHOUSE_STYLES = String.raw`
 .dth-body {
   flex: 1; min-height: 0;
   overflow-y: auto; overscroll-behavior: contain;
-  padding: 1rem 1.1rem;
+  padding: clamp(1rem, 2.6vw, 1.8rem) clamp(1rem, 3.8vw, 2.8rem);
   scrollbar-width: thin; scrollbar-color: var(--dth-line) transparent;
 }
 
 .dth-empty { color: var(--dth-muted); text-align: center; padding: 2.4rem 0; }
 
-.dth-lobby { display: grid; gap: 1rem; max-width: 56rem; margin: 0 auto; }
+.dth-lobby { display: grid; gap: 1.1rem; max-width: 68rem; margin: 0 auto; }
 
 .dth-lobby-hero {
   position: relative;
-  border: 1px solid var(--dth-line);
-  border-radius: 1rem;
-  min-height: 9.5rem;
+  border: 1px solid rgb(255 255 255 / 12%);
+  border-radius: 1.25rem;
+  min-height: clamp(11rem, 25vw, 15rem);
   display: flex; align-items: flex-end;
   background-position: 72% 40%;
   background-size: cover;
@@ -241,7 +243,7 @@ export const TEAHOUSE_STYLES = String.raw`
 }
 .dth-lobby-hero::after {
   content: ""; position: absolute; inset: 0;
-  background: linear-gradient(180deg, rgb(6 19 26 / 10%) 30%, rgb(6 19 26 / 88%));
+  background: linear-gradient(90deg, rgb(6 19 26 / 92%), rgb(6 19 26 / 58%) 45%, rgb(6 19 26 / 26%)), linear-gradient(180deg, rgb(6 19 26 / 5%), rgb(6 19 26 / 86%));
 }
 .dth-lobby-hero-copy {
   position: relative; z-index: 1;
@@ -259,26 +261,61 @@ export const TEAHOUSE_STYLES = String.raw`
 .dth-lobby-hero-copy h1 { margin: 0; font-size: 1.15rem; font-weight: 650; }
 .dth-lobby-hero-copy p { margin: 0.15rem 0 0; color: var(--dth-muted); font-size: 0.8rem; }
 
-.dth-lobby-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(19rem, 1fr)); gap: 0.9rem; }
+.dth-lobby-grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 0.9rem; }
 
 .dth-game-card {
   --dth-card-accent: 195;
   position: relative;
   display: flex; align-items: center; gap: 0.9rem;
+  min-height: 10.6rem;
   padding: 1rem 1.1rem;
-  border: 1px solid var(--dth-line);
-  border-radius: 1rem;
+  grid-column: span 6;
+  border: 1px solid rgb(255 255 255 / 10%);
+  border-radius: 1.1rem;
   background:
     radial-gradient(130% 120% at 100% 0%, hsl(var(--dth-card-accent) 40% 20% / 55%), transparent 55%),
     var(--dth-panel);
   color: var(--dth-text);
   text-align: left; cursor: pointer;
-  transition: transform 160ms ease, border-color 160ms ease;
+  overflow: hidden;
+  isolation: isolate;
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 14%), 0 12px 30px rgb(0 0 0 / 12%);
+  transition: transform 520ms var(--dth-ease), border-color 360ms var(--dth-ease), box-shadow 520ms var(--dth-ease);
 }
 .dth-game-card:hover {
-  transform: translateY(-3px);
-  border-color: hsl(var(--dth-card-accent) 55% 55%);
+  transform: translateY(-5px);
+  border-color: hsl(var(--dth-card-accent) 55% 58% / 75%);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 6%), 0 20px 42px rgb(0 0 0 / 26%), 0 0 0 1px hsl(var(--dth-card-accent) 55% 55% / 12%);
 }
+
+.dth-game-card:nth-child(1) { grid-column: span 7; }
+.dth-game-card:nth-child(2) { grid-column: span 5; }
+.dth-game-card:nth-child(3) { grid-column: 3 / span 7; }
+.dth-game-card-art {
+  position: absolute;
+  z-index: -1;
+  inset: 0 0 0 auto;
+  width: 68%;
+  background-position: center;
+  background-size: cover;
+  opacity: 0.68;
+  -webkit-mask-image: linear-gradient(90deg, transparent 0%, rgb(0 0 0 / 82%) 40%, #000 100%);
+  mask-image: linear-gradient(90deg, transparent 0%, rgb(0 0 0 / 82%) 40%, #000 100%);
+  transition: transform 700ms var(--dth-ease), opacity 520ms var(--dth-ease);
+}
+.dth-game-card:hover .dth-game-card-art { transform: scale(1.06); opacity: 0.86; }
+.dth-game-card.has-art::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  background: linear-gradient(90deg, var(--dth-panel) 0%, rgb(16 35 44 / 88%) 39%, rgb(16 35 44 / 28%) 100%);
+}
+.dth-game-card:focus-visible,
+.dth-launcher:focus-visible,
+.dth-text-button:focus-visible,
+.dth-close-button:focus-visible,
+.dth-primary-button:focus-visible { outline: 2px solid var(--dth-amber); outline-offset: 3px; }
 
 .dth-game-glyph {
   display: inline-flex; align-items: center; justify-content: center;
@@ -309,7 +346,7 @@ export const TEAHOUSE_STYLES = String.raw`
   background: rgb(9 25 33 / 55%);
 }
 
-.dth-game-go { margin-left: auto; color: var(--dth-faint); font-size: 1.1rem; transition: transform 140ms ease, color 140ms ease; }
+.dth-game-go { margin-left: auto; color: var(--dth-faint); font-size: 1.1rem; transition: transform 420ms var(--dth-ease), color 280ms var(--dth-ease); }
 .dth-game-card:hover .dth-game-go { transform: translateX(3px); color: hsl(var(--dth-card-accent) 60% 70%); }
 
 .dth-lobby-foot { margin: 0.3rem 0 0; color: var(--dth-faint); font-size: 0.72rem; text-align: center; }
@@ -322,9 +359,9 @@ export const TEAHOUSE_STYLES = String.raw`
   color: var(--dth-text);
   padding: 0.6rem 1.4rem; border-radius: 0.7rem;
   font-size: 0.9rem; cursor: pointer;
-  transition: transform 120ms ease, background 120ms ease;
+  transition: transform 360ms var(--dth-ease), background 280ms var(--dth-ease), box-shadow 360ms var(--dth-ease);
 }
-.dth-primary-button:hover { transform: translateY(-1px); background: hsl(var(--dth-accent) 45% 32%); }
+.dth-primary-button:hover { transform: translateY(-2px); background: hsl(var(--dth-accent) 45% 32%); box-shadow: 0 12px 24px hsl(var(--dth-accent) 45% 18% / 38%); }
 
 /* ---------- harbor pairs ---------- */
 
@@ -599,6 +636,11 @@ export const TEAHOUSE_STYLES = String.raw`
   .dth-stats { display: none; }
   .dth-body { padding: 0.7rem; }
   .dth-lobby-grid { grid-template-columns: 1fr; }
+  .dth-game-card,
+  .dth-game-card:nth-child(1),
+  .dth-game-card:nth-child(2),
+  .dth-game-card:nth-child(3) { grid-column: auto; min-height: 8.8rem; }
+  .dth-game-card-art { width: 72%; }
   .dth-game-go { display: none; }
   .dth-pairs-grid { gap: 0.4rem; }
   .dth-dock { max-height: 18rem; }

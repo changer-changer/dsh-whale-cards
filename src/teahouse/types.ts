@@ -76,6 +76,8 @@ export interface GameManifest {
   readonly why: string
   /** Emoji or short glyph used on the lobby card. */
   readonly glyph: string
+  /** Optional embedded cover art for a featured lobby card. */
+  readonly cover?: string
   /** Accent hue (0–360) for card and shell theming. */
   readonly accent: number
 }

@@ -231,7 +231,8 @@ function Lobby({ lanyinState, stats, onPick }: {
         {GAME_REGISTRY.map(({ manifest }) => {
           const hasSave = slotExists(manifest.id)
           return (
-            <button key={manifest.id} type="button" className="dth-game-card" style={{ '--dth-card-accent': manifest.accent } as React.CSSProperties} onClick={() => { onPick(manifest.id) }}>
+            <button key={manifest.id} type="button" className={`dth-game-card${manifest.cover !== undefined ? ' has-art' : ''}`} style={{ '--dth-card-accent': manifest.accent } as React.CSSProperties} onClick={() => { onPick(manifest.id) }}>
+              {manifest.cover !== undefined && <span className="dth-game-card-art" aria-hidden="true" style={{ backgroundImage: `url(${manifest.cover})` }} />}
               <span className="dth-game-glyph" aria-hidden="true">{manifest.glyph}</span>
               <span className="dth-game-copy">
                 <strong>{manifest.title}{hasSave && <em className="dth-game-resume">有存档</em>}</strong>
