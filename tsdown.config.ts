@@ -14,6 +14,11 @@ export default defineConfig([
     dts: false,
     sourcemap: true,
     clean: true,
+    deps: {
+      // The Host already owns these singleton services. Bundling another copy
+      // would split Cordis registries and break Agent/Session scope identity.
+      neverBundle: [/^@deepseek-ai\//],
+    },
     outputOptions: {
       entryFileNames: 'index.js',
     },

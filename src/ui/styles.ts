@@ -118,7 +118,7 @@ export const GAME_STYLES = String.raw`
 .dwc-game-shell {
   width: min(90rem, calc(100vw - 2rem));
   height: min(56rem, calc(100dvh - 2rem));
-  min-height: min(42rem, calc(100dvh - 2rem));
+  min-height: 0;
   overflow: hidden;
   border: 1px solid var(--dwc-line-strong);
   border-radius: 1rem;
@@ -449,8 +449,8 @@ export const GAME_STYLES = String.raw`
 /* Playing cards */
 .dwc-card {
   position: relative;
-  width: clamp(3.75rem, 5.1vw, 4.45rem);
-  height: clamp(5.35rem, 7.25vw, 6.3rem);
+  width: var(--dwc-card-w, clamp(3.75rem, 5.1vw, 4.45rem));
+  height: var(--dwc-card-h, clamp(5.35rem, 7.25vw, 6.3rem));
   padding: 0.42rem;
   border: 1px solid #c6c0af;
   border-radius: 0.52rem;
@@ -534,8 +534,8 @@ button.dwc-card--selected:hover:not(:disabled) {
 }
 
 .dwc-card--compact {
-  width: 2.85rem;
-  height: 4.05rem;
+  width: var(--dwc-card-compact-w, 2.85rem);
+  height: var(--dwc-card-compact-h, 4.05rem);
   padding: 0.3rem;
   border-radius: 0.4rem;
 }
@@ -574,7 +574,9 @@ button.dwc-card--selected:hover:not(:disabled) {
 /* Welcome */
 .dwc-welcome {
   position: relative;
-  min-height: min(780px, 100dvh);
+  height: 100%;
+  min-height: 0;
+  container-type: inline-size;
   overflow: hidden;
   background: #07151d;
   isolation: isolate;
@@ -604,7 +606,7 @@ button.dwc-card--selected:hover:not(:disabled) {
 
 .dwc-welcome__content {
   width: min(46rem, 62%);
-  min-height: min(780px, 100dvh);
+  min-height: 100%;
   padding: clamp(2.2rem, 7vh, 5.5rem) clamp(1.5rem, 5.6vw, 5rem) clamp(1.8rem, 4vh, 3rem);
   display: flex;
   flex-direction: column;
@@ -734,9 +736,47 @@ button.dwc-card--selected:hover:not(:disabled) {
   font-weight: 720;
 }
 
+@media (max-height: 780px) {
+  .dwc-table {
+    --dwc-card-w: clamp(3rem, 4.2vw, 3.7rem);
+    --dwc-card-h: clamp(4.3rem, 6vw, 5.25rem);
+    --dwc-card-compact-w: 2.35rem;
+    --dwc-card-compact-h: 3.35rem;
+    --dwc-card-back-h: 3.2rem;
+  }
+  .dwc-table__bar { min-height: 0; padding: 0.45rem clamp(0.7rem, 2vw, 1.4rem); }
+  .dwc-dialogue { min-height: 0; padding: 0.6rem 3.4rem 0.6rem 0.9rem; }
+  .dwc-dialogue p { font-size: 0.8rem; line-height: 1.5; }
+  .dwc-zone-label { min-height: 0; margin-bottom: 0.3rem; }
+}
+
+@media (max-height: 660px) {
+  .dwc-table {
+    --dwc-card-w: 2.7rem;
+    --dwc-card-h: 3.85rem;
+    --dwc-card-compact-w: 2.1rem;
+    --dwc-card-compact-h: 3rem;
+    --dwc-card-back-h: 2.8rem;
+  }
+  .dwc-companion__meta { inset: 0.7rem 0.7rem auto; }
+  .dwc-rapport { display: none; }
+}
+
+@media (min-width: 1500px) and (min-height: 820px) {
+  .dwc-table {
+    --dwc-card-w: clamp(4.1rem, 3.4vw, 5.2rem);
+    --dwc-card-h: clamp(5.9rem, 4.9vw, 7.4rem);
+    --dwc-card-compact-w: 3.2rem;
+    --dwc-card-compact-h: 4.55rem;
+  }
+}
+
 /* Table */
 .dwc-table {
-  min-height: min(820px, 100dvh);
+  height: 100%;
+  min-height: 0;
+  container-type: inline-size;
+  overflow: hidden;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   background: var(--dwc-bg);
@@ -763,6 +803,31 @@ button.dwc-card--selected:hover:not(:disabled) {
   font-size: 1.2rem;
   font-weight: 500;
   letter-spacing: 0.02em;
+}
+
+.dwc-table__tools {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin-left: auto;
+}
+
+.dwc-table__tools button {
+  min-height: 2rem;
+  padding: 0.28rem 0.62rem;
+  border: 1px solid var(--dwc-line);
+  border-radius: 0.38rem;
+  color: var(--dwc-muted);
+  background: transparent;
+  font: inherit;
+  font-size: 0.68rem;
+  cursor: pointer;
+}
+
+.dwc-table__tools button:hover {
+  color: var(--dwc-text);
+  border-color: var(--dwc-line-strong);
+  background: rgb(255 255 255 / 4%);
 }
 
 .dwc-score {
@@ -804,25 +869,40 @@ button.dwc-card--selected:hover:not(:disabled) {
 
 .dwc-table__stage {
   min-height: 0;
+  overflow: hidden;
   display: grid;
-  grid-template-columns: minmax(17.5rem, 0.72fr) minmax(31rem, 1.45fr);
+  grid-template-columns: minmax(0, 0.58fr) minmax(0, 1.6fr);
+  align-items: stretch;
+}
+
+@container (max-width: 52rem) {
+  .dwc-table__stage {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: clamp(5rem, 22cqi, 9rem) minmax(0, 1fr);
+  }
+  .dwc-companion { border-right: none; border-bottom: 1px solid var(--dwc-line); }
+  .dwc-companion__meta { inset: 0.5rem 0.6rem auto; }
+  .dwc-rapport { display: none; }
 }
 
 .dwc-companion {
   position: relative;
   min-height: 0;
+  height: 100%;
   overflow: hidden;
+  isolation: isolate;
   border-right: 1px solid var(--dwc-line);
   background: #0b2028;
 }
 
 .dwc-companion__art {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
-  min-height: 42rem;
   display: block;
   object-fit: cover;
-  object-position: 67% center;
+  object-position: 62% 22%;
   filter: saturate(0.82) brightness(0.8);
 }
 
@@ -922,12 +1002,19 @@ button.dwc-card--selected:hover:not(:disabled) {
 .dwc-play-area {
   min-width: 0;
   min-height: 0;
-  padding: clamp(0.85rem, 2.3vh, 1.45rem) clamp(0.9rem, 2.1vw, 1.6rem);
-  display: grid;
-  grid-template-rows: minmax(6.5rem, auto) minmax(13rem, 1fr) minmax(12.5rem, auto);
-  gap: 0.8rem;
+  height: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: clamp(0.6rem, 2.3cqi, 1.45rem) clamp(0.7rem, 2.1cqi, 1.6rem);
+  display: flex;
+  flex-direction: column;
+  gap: clamp(0.4rem, 1.4cqi, 0.8rem);
   background: #0a1921;
 }
+
+.dwc-opponent-zone { flex: 0 0 auto; }
+.dwc-table-center { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+.dwc-player-zone { flex: 0 0 auto; }
 
 .dwc-opponent-zone,
 .dwc-player-zone {
@@ -953,7 +1040,7 @@ button.dwc-card--selected:hover:not(:disabled) {
 }
 
 .dwc-opponent-hand {
-  height: 4.25rem;
+  height: var(--dwc-card-back-h, clamp(3rem, 9cqi, 4.25rem));
   padding-left: 1rem;
   display: flex;
   align-items: flex-start;
@@ -969,8 +1056,8 @@ button.dwc-card--selected:hover:not(:disabled) {
 .dwc-opponent-hand .dwc-card:nth-child(even) { transform: translateY(0); }
 
 .dwc-table-center {
-  min-height: 13rem;
-  padding: 0.8rem;
+  min-height: 0;
+  padding: clamp(0.35rem, 1.4cqi, 0.8rem);
   border-block: 1px solid var(--dwc-line);
   display: flex;
   flex-direction: column;

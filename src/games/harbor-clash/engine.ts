@@ -1,346 +1,217 @@
-/**
- * Harbor Clash — a Gwent-style card duel for the teahouse.
- *
- * Original cards and rules (no CDPR assets): both sides play from a fixed
- * 16-card harbor deck, draw 10 per round, and duel over three rounds — play
- * a card or pass; the side with the higher board power wins the round; first
- * to two round wins takes the match.
- *
- * The engine is pure and serializable: every state is a plain object that
- * round-trips through JSON, so the module can persist it in the shared slot.
- * A random source can be injected for deterministic tests.
- *
- * @module games/harbor-clash/engine
- */
+/** Pure engine for Harbor Clash: a compact three-lane formation duel. */
 
 export type Player = 'human' | 'lanyin'
-export type CardKind = 'unit' | 'horn' | 'draw' | 'fog'
-export type Phase = 'play' | 'round_end' | 'match_over'
+export type Suit = 'tide' | 'ember' | 'mist'
+export type LaneId = 'north' | 'mid' | 'south'
+export type ClashPhase = 'play' | 'match_over'
 
 export interface ClashCard {
   readonly id: string
-  readonly name: string
-  readonly power: number
-  readonly kind: CardKind
+  readonly suit: Suit
+  readonly value: number
 }
 
-/** A card on the board; power is the live value after horn/fog modifiers. */
-export interface FieldCard {
-  readonly id: string
-  readonly name: string
-  readonly power: number
-}
-
-export interface SideState {
-  readonly hand: readonly ClashCard[]
-  readonly deck: readonly ClashCard[]
-  readonly field: readonly FieldCard[]
-  readonly passed: boolean
-  /** True while the opponent's fog light is aimed at this side. */
-  readonly fogged: boolean
+export interface Lane {
+  readonly id: LaneId
+  readonly title: string
+  readonly human: readonly ClashCard[]
+  readonly lanyin: readonly ClashCard[]
+  readonly claimedBy: Player | null
 }
 
 export interface ClashState {
-  readonly round: number
-  readonly scores: Readonly<Record<Player, number>>
+  readonly version: 2
+  readonly phase: ClashPhase
   readonly turn: Player
-  readonly sides: Readonly<Record<Player, SideState>>
-  readonly phase: Phase
-  readonly roundWinner: Player | null
-  readonly matchWinner: Player | null
-  /** Short human-readable summary of the last transition (for Lanyin/UI). */
-  readonly lastEvent: string | null
+  readonly hands: Readonly<Record<Player, readonly ClashCard[]>>
+  readonly deck: readonly ClashCard[]
+  readonly lanes: readonly Lane[]
+  readonly winner: Player | null
+  readonly lastEvent: string
 }
 
-export const MAX_ROUNDS = 3
-export const HAND_SIZE = 10
-
-/** The fixed, original harbor deck — 16 cards, total power 61. */
-export const DECK: readonly ClashCard[] = [
-  { id: 'c01', name: '深海鲸', power: 8, kind: 'unit' },
-  { id: 'c02', name: '护卫舰', power: 7, kind: 'unit' },
-  { id: 'c03', name: '护卫舰', power: 7, kind: 'unit' },
-  { id: 'c04', name: '灯塔看守', power: 5, kind: 'unit' },
-  { id: 'c05', name: '灯塔看守', power: 5, kind: 'unit' },
-  { id: 'c06', name: '信风商船', power: 5, kind: 'draw' },
-  { id: 'c07', name: '港务长', power: 4, kind: 'horn' },
-  { id: 'c08', name: '舵手', power: 4, kind: 'unit' },
-  { id: 'c09', name: '舵手', power: 4, kind: 'unit' },
-  { id: 'c10', name: '渔夫', power: 3, kind: 'unit' },
-  { id: 'c11', name: '渔夫', power: 3, kind: 'unit' },
-  { id: 'c12', name: '码头工', power: 2, kind: 'unit' },
-  { id: 'c13', name: '码头工', power: 2, kind: 'unit' },
-  { id: 'c14', name: '见习水手', power: 1, kind: 'unit' },
-  { id: 'c15', name: '瞭望犬', power: 1, kind: 'unit' },
-  { id: 'c16', name: '雾灯', power: 0, kind: 'fog' },
-]
-
-const OPPONENT: Readonly<Record<Player, Player>> = { human: 'lanyin', lanyin: 'human' }
-
-export function boardPower(state: ClashState, player: Player): number {
-  return state.sides[player].field.reduce((total, card) => total + card.power, 0)
+export interface Formation {
+  readonly tier: number
+  readonly label: string
+  readonly sum: number
+  readonly kickers: readonly number[]
 }
+
+export const SUIT_LABEL: Readonly<Record<Suit, string>> = { tide: '潮汐', ember: '灯焰', mist: '雾色' }
+export const FORMATION_LABEL: Readonly<Record<number, string>> = {
+  0: '未成阵',
+  1: '合力',
+  2: '顺风航线',
+  3: '同潮编队',
+  4: '同旗舰队',
+  5: '灯塔连阵',
+}
+
+export const CLASH_DECK: readonly ClashCard[] = (['tide', 'ember', 'mist'] as const).flatMap((suit) =>
+  Array.from({ length: 7 }, (_, index) => ({ id: `${suit}-${index + 1}`, suit, value: index + 1 })),
+)
 
 function shuffled<T>(items: readonly T[], random: () => number): T[] {
   const result = [...items]
-  for (let i = result.length - 1; i > 0; i -= 1) {
-    const j = Math.floor(random() * (i + 1))
-    ;[result[i], result[j]] = [result[j], result[i]]
+  for (let index = result.length - 1; index > 0; index -= 1) {
+    const swap = Math.floor(random() * (index + 1))
+    ;[result[index], result[swap]] = [result[swap], result[index]]
   }
   return result
 }
 
-function freshSide(random: () => number): SideState {
-  const deck = shuffled(DECK, random)
-  return {
-    hand: deck.slice(0, HAND_SIZE),
-    deck: deck.slice(HAND_SIZE),
-    field: [],
-    passed: false,
-    fogged: false,
-  }
-}
-
 export function createMatch(random: () => number = Math.random): ClashState {
+  const deck = shuffled(CLASH_DECK, random)
   return {
-    round: 1,
-    scores: { human: 0, lanyin: 0 },
-    turn: 'human',
-    sides: { human: freshSide(random), lanyin: freshSide(random) },
+    version: 2,
     phase: 'play',
-    roundWinner: null,
-    matchWinner: null,
-    lastEvent: null,
+    turn: 'human',
+    hands: { human: deck.slice(0, 6), lanyin: deck.slice(6, 12) },
+    deck: deck.slice(12),
+    lanes: [
+      { id: 'north', title: '北灯塔', human: [], lanyin: [], claimedBy: null },
+      { id: 'mid', title: '主航道', human: [], lanyin: [], claimedBy: null },
+      { id: 'south', title: '南灯塔', human: [], lanyin: [], claimedBy: null },
+    ],
+    winner: null,
+    lastEvent: '三座航标亮起，争夺开始。',
   }
 }
 
-/** Effective power of a hand card if played right now, for AI/UI hints. */
-export function effectivePower(card: ClashCard, side: SideState, allyFieldCount: number): number {
-  let power = card.power
-  if (card.kind === 'horn') {
-    // Horn is wasted when nothing is on the board yet.
-    if (allyFieldCount === 0) power -= 1
-    else power += Math.min(allyFieldCount, 3)
-  }
-  if (card.kind === 'draw') power += 1.5
-  if (side.fogged) power -= 2
-  return power
+export function isClashState(value: unknown): value is ClashState {
+  if (value === null || typeof value !== 'object') return false
+  const candidate = value as Partial<ClashState>
+  return candidate.version === 2
+    && (candidate.turn === 'human' || candidate.turn === 'lanyin')
+    && Array.isArray(candidate.lanes)
+    && candidate.hands !== undefined
 }
 
-function playResolve(state: ClashState, player: Player, card: ClashCard): { state: ClashState; event: string } {
-  const side = state.sides[player]
-  const opponent = state.sides[OPPONENT[player]]
-
-  let power = card.power
-  let event = `出牌 ${card.name}（${card.power} 战力）`
-  const notes: string[] = []
-
-  if (side.fogged) {
-    power = Math.max(0, power - 2)
-    notes.push('雾灯使战力 -2')
-  }
-  if (card.kind === 'horn') {
-    const boosted = side.field.map((existing) => ({ ...existing, power: existing.power + 1 }))
-    event = `港务长登船，全船 +1（${boosted.length} 张在场牌）`
-    return {
-      state: {
-        ...state,
-        sides: {
-          ...state.sides,
-          [player]: {
-            ...side,
-            hand: side.hand.filter((held) => held.id !== card.id),
-            field: [...boosted, { id: card.id, name: card.name, power }],
-            fogged: false,
-            passed: false,
-          },
-        },
-      },
-      event,
-    }
-  }
-
-  const fogged = card.kind === 'fog'
-  const nextSide: SideState = {
-    ...side,
-    field: [...side.field, { id: card.id, name: card.name, power }],
-    hand: side.hand.filter((held) => held.id !== card.id),
-    fogged: false,
-    passed: false,
-  }
-
-  let nextOpponent = opponent
-  if (fogged) {
-    nextOpponent = { ...opponent, fogged: true }
-    event = '雾灯点亮，对准对方下一张牌（战力 -2）'
-  } else if (opponent.fogged) {
-    notes.push('驱散雾灯')
-  }
-
-  let next = {
-    ...state,
-    sides: { ...state.sides, [player]: nextSide, [OPPONENT[player]]: nextOpponent },
-  }
-
-  if (card.kind === 'draw' && nextSide.deck.length > 0) {
-    const drawn = nextSide.deck[0]
-    next = {
-      ...next,
-      sides: {
-        ...next.sides,
-        [player]: {
-          ...nextSide,
-          hand: [...nextSide.hand, drawn],
-          deck: nextSide.deck.slice(1),
-        },
-      },
-    }
-    event = `${card.name} 扬帆：从卡组抽到 ${drawn.name}`
-    notes.push(`抽到 ${drawn.name}`)
-  }
-
-  if (notes.length > 0) event = `${event}（${notes.join('；')}）`
-  return { state: next, event }
+export function evaluateFormation(cards: readonly ClashCard[]): Formation {
+  const sum = cards.reduce((total, item) => total + item.value, 0)
+  const kickers = cards.map((item) => item.value).sort((left, right) => right - left)
+  if (cards.length !== 3) return { tier: 0, label: FORMATION_LABEL[0], sum, kickers }
+  const sameSuit = cards.every((item) => item.suit === cards[0]?.suit)
+  const sameValue = cards.every((item) => item.value === cards[0]?.value)
+  const values = [...cards].map((item) => item.value).sort((left, right) => left - right)
+  const run = values[1] === values[0]! + 1 && values[2] === values[1]! + 1
+  const tier = sameSuit && run ? 5 : sameValue ? 4 : sameSuit ? 3 : run ? 2 : 1
+  return { tier, label: FORMATION_LABEL[tier], sum, kickers }
 }
 
-function endRound(state: ClashState): ClashState {
-  const human = boardPower(state, 'human')
-  const lanyin = boardPower(state, 'lanyin')
-  const roundWinner: Player | null = human === lanyin ? null : human > lanyin ? 'human' : 'lanyin'
-
-  const scores = { ...state.scores }
-  if (roundWinner !== null) scores[roundWinner] += 1
-
-  const matchWinner: Player | null =
-    scores.human >= 2 ? 'human'
-    : scores.lanyin >= 2 ? 'lanyin'
-    : state.round >= MAX_ROUNDS ? (scores.human === scores.lanyin ? null : scores.human > scores.lanyin ? 'human' : 'lanyin')
-    : null
-
-  const roundText = roundWinner === null
-    ? `第 ${state.round} 小局平局（${human} : ${lanyin}）`
-    : `第 ${state.round} 小局 ${roundWinner === 'human' ? '玩家' : '澜音'} 胜出（${human} : ${lanyin}）`
-
-  return {
-    ...state,
-    scores,
-    phase: matchWinner === null && state.round < MAX_ROUNDS ? 'round_end' : 'match_over',
-    roundWinner,
-    matchWinner,
-    lastEvent: matchWinner === null
-      ? `${roundText}。当前 ${scores.human} : ${scores.lanyin}`
-      : `${roundText}。${matchWinner === null ? '比赛平局' : matchWinner === 'human' ? '玩家赢得比赛' : '澜音赢得比赛'}（${scores.human} : ${scores.lanyin}）`,
+export function compareFormations(left: readonly ClashCard[], right: readonly ClashCard[]): number {
+  const a = evaluateFormation(left)
+  const b = evaluateFormation(right)
+  if (a.tier !== b.tier) return a.tier - b.tier
+  if (a.sum !== b.sum) return a.sum - b.sum
+  for (let index = 0; index < Math.max(a.kickers.length, b.kickers.length); index += 1) {
+    const difference = (a.kickers[index] ?? 0) - (b.kickers[index] ?? 0)
+    if (difference !== 0) return difference
   }
+  return 0
 }
 
-/** Play a card from `player`'s hand. Throws on illegal moves. */
-export function playCard(state: ClashState, player: Player, cardId: string): ClashState {
-  if (state.phase !== 'play') throw new Error('本小局已经结束。')
-  if (state.turn !== player) throw new Error('还没轮到你出牌。')
-  const side = state.sides[player]
-  if (side.passed) throw new Error('你已经过牌，本小局不能再出。')
-  const card = side.hand.find((held) => held.id === cardId)
-  if (card === undefined) throw new Error('这张牌不在你的手牌里。')
-
-  const { state: afterPlay, event } = playResolve(state, player, card)
-
-  // Empty hand forces a pass; if both sides have passed the round resolves.
-  const played = afterPlay.sides[player]
-  let next: ClashState = { ...afterPlay, lastEvent: event }
-  if (played.hand.length === 0) {
-    next = {
-      ...next,
-      sides: { ...next.sides, [player]: { ...played, passed: true } },
-    }
-  }
-  const other = next.sides[OPPONENT[player]]
-  if (next.sides.human.passed && next.sides.lanyin.passed) return endRound(next)
-  if (next.sides[player].hand.length === 0 && other.hand.length === 0) {
-    return endRound({
-      ...next,
-      sides: { ...next.sides, [OPPONENT[player]]: { ...other, passed: true } },
-    })
-  }
-  // The turn goes to the side that can still act: a passed opponent lets the
-  // acting side keep playing cards.
-  return {
-    ...next,
-    turn: other.passed ? player : OPPONENT[player],
-  }
+export function claimedCount(state: ClashState, player: Player): number {
+  return state.lanes.filter((lane) => lane.claimedBy === player).length
 }
 
-/** Pass for the current round. Throws if the round is over or the side passed. */
-export function pass(state: ClashState, player: Player): ClashState {
-  if (state.phase !== 'play') throw new Error('本小局已经结束。')
+function resolveLane(lane: Lane): Lane {
+  if (lane.claimedBy !== null || lane.human.length !== 3 || lane.lanyin.length !== 3) return lane
+  const result = compareFormations(lane.human, lane.lanyin)
+  return { ...lane, claimedBy: result === 0 ? null : result > 0 ? 'human' : 'lanyin' }
+}
+
+function hasOpenSlot(state: ClashState): boolean {
+  return state.lanes.some((lane) => lane.claimedBy === null && (lane.human.length < 3 || lane.lanyin.length < 3))
+}
+
+function settleState(state: ClashState, event: string): ClashState {
+  const human = claimedCount(state, 'human')
+  const lanyin = claimedCount(state, 'lanyin')
+  if (human >= 2 || lanyin >= 2) {
+    const winner: Player = human > lanyin ? 'human' : 'lanyin'
+    return { ...state, phase: 'match_over', winner, lastEvent: `${event} ${winner === 'human' ? '你' : '澜音'}率先控制两座航标。` }
+  }
+  if (!hasOpenSlot(state) || (state.hands.human.length === 0 && state.hands.lanyin.length === 0 && state.deck.length === 0)) {
+    const winner: Player | null = human === lanyin ? null : human > lanyin ? 'human' : 'lanyin'
+    return { ...state, phase: 'match_over', winner, lastEvent: `${event} 三条航线全部锁定。` }
+  }
+  return { ...state, lastEvent: event }
+}
+
+export function playCard(state: ClashState, player: Player, cardId: string, laneId: LaneId): ClashState {
+  if (state.phase !== 'play') throw new Error('这场对决已经结束。')
   if (state.turn !== player) throw new Error('还没轮到你行动。')
-  if (state.sides[player].passed) throw new Error('你已经过牌了。')
+  const card = state.hands[player].find((item) => item.id === cardId)
+  if (card === undefined) throw new Error('这张牌不在你的手牌里。')
+  const laneIndex = state.lanes.findIndex((item) => item.id === laneId)
+  if (laneIndex < 0) throw new Error('这条航线不存在。')
+  const lane = state.lanes[laneIndex]!
+  if (lane.claimedBy !== null) throw new Error('这座航标已经归属一方。')
+  if (lane[player].length >= 3) throw new Error('你在这条航线的编队已经满员。')
 
-  const next = {
+  const drawn = state.deck[0]
+  const hands = {
+    ...state.hands,
+    [player]: [
+      ...state.hands[player].filter((item) => item.id !== cardId),
+      ...(drawn === undefined ? [] : [drawn]),
+    ],
+  }
+  const placed = { ...lane, [player]: [...lane[player], card] }
+  const resolved = resolveLane(placed)
+  const lanes = state.lanes.map((item, index) => index === laneIndex ? resolved : item)
+  const actor = player === 'human' ? '你' : '澜音'
+  const claimText = resolved.claimedBy === player ? `，${actor}拿下${lane.title}` : ''
+  const other: Player = player === 'human' ? 'lanyin' : 'human'
+  const nextTurn = hands[other].length === 0 && (drawn === undefined ? state.deck : state.deck.slice(1)).length === 0
+    ? player
+    : other
+  const next: ClashState = {
     ...state,
-    sides: {
-      ...state.sides,
-      [player]: { ...state.sides[player], passed: true },
-    },
-    lastEvent: `${player === 'human' ? '玩家' : '澜音'}选择过牌，本小局不再出牌`,
+    hands,
+    deck: drawn === undefined ? state.deck : state.deck.slice(1),
+    lanes,
+    turn: nextTurn,
+    lastEvent: `${actor}把 ${SUIT_LABEL[card.suit]} ${card.value} 派往${lane.title}${claimText}。`,
   }
-  if (next.sides.human.passed && next.sides.lanyin.passed) return endRound(next)
-  // The other side may keep playing; if they have no cards left, they pass too.
-  if (next.sides[OPPONENT[player]].hand.length === 0) {
-    return endRound({
-      ...next,
-      sides: {
-        ...next.sides,
-        [OPPONENT[player]]: { ...next.sides[OPPONENT[player]], passed: true },
-      },
-    })
-  }
-  return { ...next, turn: OPPONENT[player] }
+  return settleState(next, next.lastEvent)
 }
 
-/** Advance to the next round (re-deal both hands from the full deck). */
-export function nextRound(state: ClashState, random: () => number = Math.random): ClashState {
-  if (state.phase !== 'round_end') throw new Error('当前小局还没结束。')
-  const next = {
-    ...createMatch(random),
-    round: state.round + 1,
-    scores: state.scores,
-    lastEvent: `第 ${state.round + 1} 小局开始`,
-  }
-  // First mover alternates: Lanyin leads even rounds (2, 4, …).
-  return { ...next, turn: next.round % 2 === 0 ? 'lanyin' : 'human' }
+function partialPotential(cards: readonly ClashCard[]): number {
+  const base = cards.reduce((total, item) => total + item.value, 0)
+  if (cards.length <= 1) return base
+  const sameSuit = cards.every((item) => item.suit === cards[0]?.suit)
+  const sameValue = cards.every((item) => item.value === cards[0]?.value)
+  const values = cards.map((item) => item.value).sort((left, right) => left - right)
+  const nearRun = new Set(values).size === values.length && Math.max(...values) - Math.min(...values) <= 2
+  return base + (sameSuit ? 34 : 0) + (sameValue ? 40 : 0) + (nearRun ? 24 : 0)
 }
 
-export interface AiDecision {
-  readonly kind: 'play' | 'pass'
-  readonly cardId: string | null
-}
+export interface AiDecision { readonly cardId: string; readonly laneId: LaneId }
 
-/** Greedy Lanyin: play the best effective card, pass when hopeless. */
-export function aiDecide(state: ClashState, random: () => number = Math.random): AiDecision {
-  if (state.phase !== 'play' || state.turn !== 'lanyin') return { kind: 'pass', cardId: null }
-  const side = state.sides.lanyin
-  if (side.passed || side.hand.length === 0) return { kind: 'pass', cardId: null }
-
-  const deficit = boardPower(state, 'human') - boardPower(state, 'lanyin')
-  const potential = side.hand.reduce((total, card) => total + Math.max(0, effectivePower(card, side, side.field.length)), 0)
-  if (deficit > 0 && potential < deficit) return { kind: 'pass', cardId: null }
-
-  let best: ClashCard | null = null
+export function aiDecide(state: ClashState): AiDecision | null {
+  if (state.phase !== 'play' || state.turn !== 'lanyin') return null
+  let best: AiDecision | null = null
   let bestScore = Number.NEGATIVE_INFINITY
-  for (const card of side.hand) {
-    const score = effectivePower(card, side, side.field.length) + random() * 0.25
-    if (score > bestScore) {
-      bestScore = score
-      best = card
+
+  for (const card of state.hands.lanyin) {
+    for (const lane of state.lanes) {
+      if (lane.claimedBy !== null || lane.lanyin.length >= 3) continue
+      const cards = [...lane.lanyin, card]
+      let score = partialPotential(cards)
+      if (cards.length === 3) {
+        const formation = evaluateFormation(cards)
+        score += formation.tier * 120 + formation.sum
+        if (lane.human.length === 3) score += compareFormations(cards, lane.human) > 0 ? 1200 : -500
+      }
+      if (lane.human.length === 2) score += 42
+      if (claimedCount(state, 'lanyin') === 1 && cards.length === 3 && lane.human.length === 3 && compareFormations(cards, lane.human) > 0) score += 2000
+      if (score > bestScore) {
+        bestScore = score
+        best = { cardId: card.id, laneId: lane.id }
+      }
     }
   }
-  return best === null ? { kind: 'pass', cardId: null } : { kind: 'play', cardId: best.id }
-}
-
-/** Friendly Chinese labels for card kinds (used by the UI legend). */
-export const KIND_LABEL: Readonly<Record<CardKind, string>> = {
-  unit: '战力牌',
-  horn: '号令：在场牌 +1',
-  draw: '扬帆：出牌时抽 1',
-  fog: '雾灯：对方下一张 -2',
+  return best
 }

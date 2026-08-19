@@ -14,7 +14,17 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { ConnectionRpcHandler, HostConnectionRpc } from '@deepseek-ai/dsh-client-connection'
 import type { LlmRuntime, Message } from '@deepseek-ai/dsh-llm'
+import type { AgentRegistry } from '@deepseek-ai/dsh-agent'
+import type { SessionQueryEngine } from '@deepseek-ai/dsh-session-query'
+import type { SystemPrompt } from '@deepseek-ai/dsh-system-prompt'
+import type { ToolRuntime } from '@deepseek-ai/dsh-tools'
+import { LanyinGameAgentHost } from './teahouse/agent-host.ts'
 import type {
+  TeahouseAgentChatRequest,
+  TeahouseAgentEndRequest,
+  TeahouseAgentEventRequest,
+  TeahouseAgentStartRequest,
+  TeahouseAgentTurnRequest,
   LanyinModelRef,
   TeahouseChatFailure,
   TeahouseChatRequest,
@@ -23,11 +33,15 @@ import type {
 } from './teahouse/types.ts'
 import { TEAHOUSE_CHANNEL } from './teahouse/types.ts'
 
-export const inject = ['llm', 'connection']
+export const inject = ['llm', 'connection', 'agents', 'tools', 'systemPrompt', 'sessionQuery']
 
 interface HostContext extends Context {
   readonly llm: LlmRuntime
   readonly connection: { readonly rpc: HostConnectionRpc }
+  readonly agents: AgentRegistry
+  readonly tools: ToolRuntime
+  readonly systemPrompt: SystemPrompt
+  readonly sessionQuery: SessionQueryEngine
 }
 
 const CHAT_MAX_TOKENS = 320
@@ -103,12 +117,18 @@ async function listModels(ctx: HostContext): Promise<TeahouseModelsResult> {
 }
 
 export function apply(ctx: HostContext): void {
+  const gameAgent = new LanyinGameAgentHost(ctx)
   const handler: ConnectionRpcHandler = async (endpoint, payload, signal) => {
     if (endpoint === 'models') return { ok: true, value: await listModels(ctx) }
     if (endpoint === 'chat') {
       const result = await runChat(ctx, payload as TeahouseChatRequest, signal)
       return { ok: true, value: result }
     }
+    if (endpoint === 'agent/start') return { ok: true, value: await gameAgent.start(payload as TeahouseAgentStartRequest) }
+    if (endpoint === 'agent/turn') return { ok: true, value: await gameAgent.turn(payload as TeahouseAgentTurnRequest) }
+    if (endpoint === 'agent/chat') return { ok: true, value: await gameAgent.chat(payload as TeahouseAgentChatRequest) }
+    if (endpoint === 'agent/event') return { ok: true, value: await gameAgent.event(payload as TeahouseAgentEventRequest) }
+    if (endpoint === 'agent/end') return { ok: true, value: await gameAgent.end(payload as TeahouseAgentEndRequest) }
     return { ok: true, value: badRequest(`unknown endpoint: ${endpoint}`) }
   }
   const dispose = ctx.connection.rpc.handle(TEAHOUSE_CHANNEL, handler, { authority: 'trusted-host' })

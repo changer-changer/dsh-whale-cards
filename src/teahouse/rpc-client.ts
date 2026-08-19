@@ -13,6 +13,13 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
 import type {
   LanyinModelRef,
+  TeahouseAgentChatRequest,
+  TeahouseAgentDecision,
+  TeahouseAgentEndRequest,
+  TeahouseAgentEventRequest,
+  TeahouseAgentResult,
+  TeahouseAgentStartRequest,
+  TeahouseAgentTurnRequest,
   TeahouseChatRequest,
   TeahouseChatResult,
   TeahouseModelsResult,
@@ -22,6 +29,11 @@ import { TEAHOUSE_CHANNEL } from './types.ts'
 export type TeahouseCaller = {
   models(signal?: AbortSignal): Promise<TeahouseModelsResult>
   chat(request: TeahouseChatRequest, signal?: AbortSignal): Promise<TeahouseChatResult>
+  startAgent(request: TeahouseAgentStartRequest, signal?: AbortSignal): Promise<TeahouseAgentResult<{ sessionId: string }>>
+  turnAgent(request: TeahouseAgentTurnRequest, signal?: AbortSignal): Promise<TeahouseAgentResult<TeahouseAgentDecision>>
+  chatAgent(request: TeahouseAgentChatRequest, signal?: AbortSignal): Promise<TeahouseAgentResult<{ text: string }>>
+  eventAgent(request: TeahouseAgentEventRequest, signal?: AbortSignal): Promise<TeahouseAgentResult<{ text: string }>>
+  endAgent(request: TeahouseAgentEndRequest, signal?: AbortSignal): Promise<TeahouseAgentResult<Record<string, never>>>
 }
 
 const UNAVAILABLE: TeahouseChatResult = {
@@ -31,6 +43,16 @@ const UNAVAILABLE: TeahouseChatResult = {
 }
 
 function callerFrom(connection: ConnectionHandle): TeahouseCaller {
+  const callAgent = async <T,>(endpoint: string, payload: unknown, signal?: AbortSignal): Promise<TeahouseAgentResult<T>> => {
+    try {
+      const envelope = await connection.rpc.call(TEAHOUSE_CHANNEL, endpoint, payload, signal)
+      return envelope.ok
+        ? (envelope.value as TeahouseAgentResult<T>)
+        : { ok: false, code: 'unavailable', message: envelope.error?.message ?? `${endpoint} rpc failed` }
+    } catch {
+      return { ok: false, code: 'unavailable', message: `${endpoint} rpc failed` }
+    }
+  }
   return {
     async models(signal): Promise<TeahouseModelsResult> {
       try {
@@ -48,6 +70,11 @@ function callerFrom(connection: ConnectionHandle): TeahouseCaller {
         return UNAVAILABLE
       }
     },
+    startAgent: (request, signal) => callAgent('agent/start', request, signal),
+    turnAgent: (request, signal) => callAgent('agent/turn', request, signal),
+    chatAgent: (request, signal) => callAgent('agent/chat', request, signal),
+    eventAgent: (request, signal) => callAgent('agent/event', request, signal),
+    endAgent: (request, signal) => callAgent('agent/end', request, signal),
   }
 }
 

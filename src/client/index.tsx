@@ -55,6 +55,7 @@ const SHADOW_BASE_STYLES = `
   }
 
   .dth-launcher,
+  .dth-launcher-quick,
   .dth-overlay {
     pointer-events: auto;
   }
@@ -88,16 +89,24 @@ export function mountGame(parent: HTMLElement, options: MountOptions = {}): Clie
 
 /** Projects the DSH session-list store onto the small task feed the teahouse uses. */
 function taskSourceFrom(ctx: ClientContext): TaskListSource {
+  // Host and browser packages both declaration-merge `Context.sessions` in this
+  // dual-face bundle; pin the browser face explicitly at this seam.
+  const list = (ctx.sessions as unknown as {
+    list: {
+      getSnapshot(): { byId: unknown; current?: unknown }
+      subscribe(listener: () => void): () => void
+    }
+  }).list
   return {
     getSnapshot() {
-      const snapshot = ctx.sessions.list.getSnapshot()
+      const snapshot = list.getSnapshot()
       return {
-        byId: snapshot.byId,
-        current: snapshot.current,
+        byId: snapshot.byId as unknown as ReturnType<TaskListSource['getSnapshot']>['byId'],
+        current: snapshot.current as unknown as ReturnType<TaskListSource['getSnapshot']>['current'],
       }
     },
     subscribe(listener) {
-      return ctx.sessions.list.subscribe(listener)
+      return list.subscribe(listener)
     },
   }
 }

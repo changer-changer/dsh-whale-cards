@@ -1,308 +1,269 @@
-/**
- * Harbor Clash — Gwent-style duel as a teahouse GameModule.
- *
- * The pure engine (./engine.ts) drives every transition; this module only
- * adapts it to the shared shell: the per-game save slot, keyboard controls,
- * the Lanyin dock remarks and result reporting.
- *
- * @module games/harbor-clash/module
- */
+/** Harbor Clash — a three-lane formation duel inside the teahouse shell. */
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { TEAHOUSE_GAMES_ART } from '../../client/generated/art.ts'
 import type { GameModule, GameServices, GameViewProps } from '../../teahouse/types.ts'
 import { clearSlot, loadSlot, saveSlot, slotExists } from '../../teahouse/storage.ts'
 import {
-  KIND_LABEL,
+  FORMATION_LABEL,
+  SUIT_LABEL,
   aiDecide,
-  boardPower,
+  claimedCount,
   createMatch,
-  nextRound,
-  pass,
+  evaluateFormation,
+  isClashState,
   playCard,
   type ClashCard,
   type ClashState,
+  type Lane,
+  type LaneId,
   type Player,
+  type Suit,
 } from './engine.ts'
 
 const GAME_ID = 'harbor-clash'
+const AGENT_RULES = '双方轮流把一张手牌部署到三条航线之一，每条航线每方最多三张。三张组成阵型后比较强弱；先控制两条航线获胜。你只能选择给出的合法部署。'
 
-const PLAYER_LABEL: Readonly<Record<Player, string>> = { human: '玩家', lanyin: '澜音' }
-const KIND_MARK: Readonly<Record<ClashCard['kind'], string>> = {
-  unit: '',
-  horn: '✦',
-  draw: '⛵',
-  fog: '🌫',
+const SUIT_MARK: Readonly<Record<Suit, string>> = { tide: '≋', ember: '◇', mist: '○' }
+
+function loadState(): ClashState | null {
+  const stored = loadSlot(GAME_ID)
+  return isClashState(stored) ? stored : null
 }
 
 function situationLine(state: ClashState): string {
-  return `正在打港湾对决：第 ${state.round}/3 小局，玩家 ${state.scores.human} 胜，澜音 ${state.scores.lanyin} 胜，玩家 ${boardPower(state, 'human')} 点 vs 澜音 ${boardPower(state, 'lanyin')} 点。`
-}
-
-function remarkFor(state: ClashState, services: GameServices): void {
-  if (state.phase === 'match_over') {
-    if (state.matchWinner === null) services.lanyinRemark('match_draw', `${state.lastEvent}（港湾对决，${situationLine(state)}）`)
-    else if (state.matchWinner === 'human') services.lanyinRemark('match_win', `${state.lastEvent}（港湾对决，${situationLine(state)}）`)
-    else services.lanyinRemark('match_loss', `${state.lastEvent}（港湾对决，${situationLine(state)}）`)
-    return
-  }
-  if (state.phase === 'round_end') {
-    if (state.roundWinner === null) services.lanyinRemark('round_draw', state.lastEvent ?? '本小局平局。')
-    else if (state.roundWinner === 'human') services.lanyinRemark('good_move', state.lastEvent ?? '本小局胜出。')
-    else services.lanyinRemark('ai_good_move', state.lastEvent ?? '本小局澜音胜出。')
-    return
-  }
-  if (state.lastEvent !== null) services.lanyinRemark('play', `${state.lastEvent}（${situationLine(state)}）`)
+  return `港湾对决三塔争夺：玩家控制 ${claimedCount(state, 'human')} 塔，澜音控制 ${claimedCount(state, 'lanyin')} 塔，${state.lastEvent}`
 }
 
 function useHarborClashGame(services: GameServices) {
-  const [state, setState] = useState<ClashState | null>(() => loadSlot(GAME_ID) as ClashState | null)
+  const [state, setState] = useState<ClashState | null>(loadState)
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [selectedLane, setSelectedLane] = useState<LaneId | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [aiThinking, setAiThinking] = useState(false)
-  const [documentVisible, setDocumentVisible] = useState(() => document.visibilityState !== 'hidden')
+  const resumedAgentStarted = useRef(false)
+
+  useEffect(() => { saveSlot(GAME_ID, state) }, [state])
 
   useEffect(() => {
-    saveSlot(GAME_ID, state)
-  }, [state])
-
-  useEffect(() => {
-    const onVisibility = (): void => setDocumentVisible(document.visibilityState !== 'hidden')
-    document.addEventListener('visibilitychange', onVisibility)
-    return () => document.removeEventListener('visibilitychange', onVisibility)
-  }, [])
-
-  const commit = useCallback((next: ClashState) => {
-    setState(next)
-    remarkFor(next, services)
-    if (next.phase === 'match_over' && state !== null && state.phase !== 'match_over') {
-      services.reportMatchResult({
-        won: next.matchWinner === 'human',
-        draw: next.matchWinner === null,
-      })
-    }
+    if (resumedAgentStarted.current || state === null || services.playMode() !== 'agent') return
+    resumedAgentStarted.current = true
+    void services.beginAgentGame({ gameId: GAME_ID, gameTitle: '港湾对决', rules: AGENT_RULES })
   }, [services, state])
 
-  // Lanyin's turn: decide after a short pause, respecting visibility.
+  const commit = useCallback((next: ClashState, previous: ClashState | null) => {
+    setState(next)
+    services.lanyinRemark(next.phase === 'match_over'
+      ? next.winner === 'human' ? 'match_win' : next.winner === 'lanyin' ? 'match_loss' : 'match_draw'
+      : 'play', situationLine(next))
+    if (next.phase === 'match_over' && previous?.phase !== 'match_over') {
+      resumedAgentStarted.current = false
+      services.reportMatchResult({ won: next.winner === 'human', draw: next.winner === null })
+      void services.endAgentGame(situationLine(next))
+    }
+  }, [services])
+
   useEffect(() => {
-    if (!documentVisible || state === null || state.phase !== 'play' || state.turn !== 'lanyin') {
+    if (state === null || state.phase !== 'play' || state.turn !== 'lanyin') {
       setAiThinking(false)
       return
     }
     setAiThinking(true)
-    const timer = window.setTimeout(() => {
-      if (document.visibilityState === 'hidden' || state === null) return
+    let cancelled = false
+    const timer = window.setTimeout(async () => {
       try {
-        const decision = aiDecide(state)
-        if (decision.kind === 'play' && decision.cardId !== null) commit(playCard(state, 'lanyin', decision.cardId))
-        else commit(pass(state, 'lanyin'))
-        setSelectedId(null)
+        let decision = aiDecide(state)
+        if (services.playMode() === 'agent') {
+          const legalActions = state.hands.lanyin.flatMap((card) => state.lanes
+            .filter((lane) => lane.claimedBy === null && lane.lanyin.length < 3)
+            .map((lane) => ({
+              id: `${card.id}|${lane.id}`,
+              label: `把 ${SUIT_LABEL[card.suit]} ${card.value} 部署到「${lane.title}」；该线目前你 ${lane.lanyin.length}/3，玩家 ${lane.human.length}/3`,
+            })))
+          const agentDecision = await services.chooseAgentAction({
+            situation: `${situationLine(state)} 你的手牌：${state.hands.lanyin.map((card) => `${card.id}=${SUIT_LABEL[card.suit]}${card.value}`).join('、')}。玩家已部署：${state.lanes.map((lane) => `${lane.title}[${lane.human.map((card) => `${SUIT_LABEL[card.suit]}${card.value}`).join('、') || '空'}]`).join('；')}`,
+            legalActions,
+          })
+          if (agentDecision !== null) {
+            const [cardId, laneId] = agentDecision.actionId.split('|')
+            if (cardId !== undefined && laneId !== undefined) decision = { cardId, laneId: laneId as LaneId }
+          }
+        }
+        if (cancelled) return
+        if (decision !== null) commit(playCard(state, 'lanyin', decision.cardId, decision.laneId), state)
         setError(null)
       } catch (cause) {
-        setError(cause instanceof Error ? cause.message : '澜音暂时没接住这手牌。')
+        setError(cause instanceof Error ? cause.message : '澜音暂时没有看清航线。')
       } finally {
         setAiThinking(false)
       }
     }, 620)
-    return () => {
-      window.clearTimeout(timer)
-      setAiThinking(false)
-    }
-  }, [state, commit, documentVisible])
+    return () => { cancelled = true; window.clearTimeout(timer) }
+  }, [commit, state])
 
-  const startMatch = useCallback(() => {
-    setState(createMatch())
+  const start = useCallback(() => {
+    const next = createMatch()
     setSelectedId(null)
+    setSelectedLane(null)
     setError(null)
-    services.lanyinRemark('new_game', '开一局港湾对决：三局两胜，出牌或过牌，战力高者赢下小局。')
-  }, [services])
+    commit(next, state)
+    if (services.playMode() === 'agent') {
+      resumedAgentStarted.current = true
+      void services.beginAgentGame({ gameId: GAME_ID, gameTitle: '港湾对决', rules: AGENT_RULES })
+    }
+    services.lanyinRemark('new_game', '港湾对决开始：向三条航线部署牌阵，先以更强阵型控制两座航标。')
+  }, [commit, services, state])
 
-  const play = useCallback((cardId: string) => {
-    if (state === null) return
+  const deploy = useCallback((laneId?: LaneId) => {
+    if (state === null || selectedId === null) return
+    const target = laneId ?? selectedLane
+    if (target === null) {
+      setError('先选择一条航线。')
+      return
+    }
     try {
-      commit(playCard(state, 'human', cardId))
+      commit(playCard(state, 'human', selectedId, target), state)
       setSelectedId(null)
+      setSelectedLane(null)
       setError(null)
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : '这张牌现在还不能出。')
+      setError(cause instanceof Error ? cause.message : '这张牌现在不能部署。')
     }
-  }, [state, commit])
-
-  const passRound = useCallback(() => {
-    if (state === null) return
-    try {
-      commit(pass(state, 'human'))
-      setSelectedId(null)
-      setError(null)
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : '现在还不能过牌。')
-    }
-  }, [state, commit])
-
-  const advance = useCallback(() => {
-    if (state === null) return
-    try {
-      commit(nextRound(state))
-      setSelectedId(null)
-      setError(null)
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : '下一小局暂时无法开始。')
-    }
-  }, [state, commit])
+  }, [commit, selectedId, selectedLane, state])
 
   return {
-    aiThinking, error, state, selectedId,
-    setSelectedId, startMatch, play, passRound, advance, clearError: () => setError(null),
+    state, selectedId, selectedLane, aiThinking, error,
+    setSelectedId, setSelectedLane, start, deploy, clearError: () => setError(null),
   }
 }
 
-function FieldRow({ player, state }: { player: Player; state: ClashState }): React.JSX.Element {
-  const side = state.sides[player]
-  const isHuman = player === 'human'
+function FormationCards({ cards, hidden = false }: { cards: readonly ClashCard[]; hidden?: boolean }): React.JSX.Element {
   return (
-    <section className={`dth-clash-side${isHuman ? ' mine' : ' theirs'}`} aria-label={`${PLAYER_LABEL[player]}的战场`}>
-      <div className="dth-clash-side-meta">
-        <span className="dth-clash-side-name">{PLAYER_LABEL[player]}{isHuman ? '' : '（盖牌手牌）'}</span>
-        {!isHuman && <span className="dth-clash-hand-count">手牌 {side.hand.length}</span>}
-        {side.fogged && <span className="dth-clash-badge fog" title="雾灯瞄准中：下一张出牌战力 -2">🌫 雾灯</span>}
-        {side.passed && <span className="dth-clash-badge passed" title="本小局已免战">已过牌</span>}
-        <span className="dth-clash-power">战力 <strong>{boardPower(state, player)}</strong></span>
-      </div>
-      <div className="dth-clash-field" role="list">
-        {side.field.length === 0 && <span className="dth-clash-empty">战场空空如也</span>}
-        {side.field.map((card) => (
-          <div className="dth-clash-field-card" key={card.id} role="listitem">
-            <span className="dth-clash-field-power">{card.power}</span>
-            <span className="dth-clash-field-name">{card.name}</span>
-          </div>
-        ))}
-      </div>
+    <div className="dth-formation-cards" role="list">
+      {Array.from({ length: 3 }, (_, index) => {
+        const card = cards[index]
+        if (card === undefined) return <span key={index} className="dth-clash-slot" aria-hidden="true"><i /></span>
+        if (hidden) return <span key={card.id} className="dth-signal-card back" role="listitem" aria-label="澜音已部署一张暗牌"><i /></span>
+        return <SignalCard key={card.id} card={card} />
+      })}
+    </div>
+  )
+}
+
+function SignalCard({ card, selected = false, disabled = false, onClick }: {
+  card: ClashCard
+  selected?: boolean
+  disabled?: boolean
+  onClick?: () => void
+}): React.JSX.Element {
+  const content = (
+    <>
+      <span className="dth-signal-suit">{SUIT_MARK[card.suit]}</span>
+      <strong>{card.value}</strong>
+      <small>{SUIT_LABEL[card.suit]}</small>
+      <i aria-hidden="true" />
+    </>
+  )
+  if (onClick === undefined) return <span className={`dth-signal-card suit-${card.suit}`} role="listitem" aria-label={`${SUIT_LABEL[card.suit]} ${card.value}`}>{content}</span>
+  return <button type="button" className={`dth-signal-card suit-${card.suit}${selected ? ' selected' : ''}`} disabled={disabled} onClick={onClick} aria-pressed={selected}>{content}</button>
+}
+
+function formationName(cards: readonly ClashCard[]): string {
+  return cards.length === 3 ? evaluateFormation(cards).label : `${cards.length} / 3`
+}
+
+function LaneColumn({ lane, myTurn, selectedCard, selected, onSelect, onDeploy }: {
+  lane: Lane
+  myTurn: boolean
+  selectedCard: ClashCard | undefined
+  selected: boolean
+  onSelect: () => void
+  onDeploy: () => void
+}): React.JSX.Element {
+  const open = lane.claimedBy === null && lane.human.length < 3
+  return (
+    <section className={`dth-lane${selected ? ' selected' : ''}${lane.claimedBy !== null ? ` claimed ${lane.claimedBy}` : ''}`} aria-label={lane.title}>
+      <header><span>{lane.title}</span><small>{formationName(lane.lanyin)}</small></header>
+      <FormationCards cards={lane.lanyin} hidden />
+      <button type="button" className="dth-beacon" onClick={onSelect} disabled={!myTurn || !open} aria-pressed={selected}>
+        <i /><strong>{lane.claimedBy === 'human' ? '归你' : lane.claimedBy === 'lanyin' ? '归澜音' : '争夺中'}</strong><small>{lane.claimedBy === null ? '完成三张后比较阵型' : '航标已锁定'}</small>
+      </button>
+      <FormationCards cards={lane.human} />
+      <footer><small>{formationName(lane.human)}</small><button type="button" onClick={onDeploy} disabled={!myTurn || !open || selectedCard === undefined}>派往此线</button></footer>
     </section>
   )
 }
 
 export function HarborClashView({ services }: GameViewProps): React.JSX.Element {
   const game = useHarborClashGame(services)
-  const { state } = game
-
-  // Keyboard: 1-9 selects a hand card, Enter plays it.
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return
-      const target = event.target
-      if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement) return
-      if (state === null || state.phase !== 'play' || state.turn !== 'human') return
-      if (/^[0-9]$/.test(event.key)) {
-        const index = event.key === '0' ? 9 : Number(event.key) - 1
-        const card = state.sides.human.hand[index]
-        if (card !== undefined) {
-          event.preventDefault()
-          game.setSelectedId(card.id)
-        }
-        return
-      }
-      if (event.key === 'Enter' && game.selectedId !== null) {
-        event.preventDefault()
-        game.play(game.selectedId)
-      }
-    }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [state, game])
+  const state = game.state
 
   if (state === null) {
     return (
-      <div className="dth-clash-intro">
-        <div className="dth-clash-glyph" aria-hidden="true">🌊</div>
-        <h2>港湾对决</h2>
-        <p>昆特式三局两胜卡牌对决。双方各 10 张手牌，出牌或过牌；每小局战力高者获胜，先赢两局者赢得比赛。</p>
-        <p className="dth-clash-hint">
-          特殊牌：<strong>✦ 港务长</strong>在场牌 +1 · <strong>⛵ 信风商船</strong>出牌时抽 1 · <strong>🌫 雾灯</strong>对方下一张 -2
-        </p>
-        <button type="button" className="dth-primary-button" onClick={game.startMatch}>开始对决</button>
-      </div>
+      <section className="dth-game-intro dth-clash-intro" style={{ '--dth-game-art': `url(${TEAHOUSE_GAMES_ART})` } as React.CSSProperties}>
+        <div className="dth-game-intro-copy">
+          <span className="dth-kicker">FORMATION DUEL · THREE LANES</span>
+          <h2>港湾对决</h2>
+          <p>把信号牌部署到三条航线。凑出同色连号、同点舰队或同色编队，以更强阵型夺塔。</p>
+          <div className="dth-formation-preview" aria-label="阵型强弱">
+            <span><b>1</b>灯塔连阵</span><span><b>2</b>同旗舰队</span><span><b>3</b>同潮编队</span><span><b>4</b>顺风航线</span>
+          </div>
+          <button type="button" className="dth-primary-button" onClick={game.start}>点亮信号塔</button>
+        </div>
+      </section>
     )
   }
 
-  const mine = state.sides.human
-  const myTurn = state.phase === 'play' && state.turn === 'human' && !mine.passed
-  const roundDots = Array.from({ length: 3 }, (_, index) => index < state.round)
+  const myTurn = state.phase === 'play' && state.turn === 'human'
+  const selectedCard = state.hands.human.find((card) => card.id === game.selectedId)
 
   return (
-    <div className="dth-clash">
-      {game.error !== null && (
-        <div className="dwc-error" role="alert">
-          <span>{game.error}</span>
-          <button type="button" onClick={game.clearError} aria-label="关闭提示">×</button>
-        </div>
-      )}
-      <header className="dth-clash-header">
-        <div className="dth-clash-rounds" aria-label={`第 ${state.round} 小局，共 3 小局`}>
-          {roundDots.map((lit, index) => <span key={index} className={lit ? 'lit' : ''} aria-hidden="true">◉</span>)}
-        </div>
-        <div className="dth-clash-score">
-          <span>玩家 <strong>{state.scores.human}</strong></span>
-          <span className="sep">:</span>
-          <span><strong>{state.scores.lanyin}</strong> 澜音</span>
-        </div>
-        <div className="dth-clash-turn">
-          {state.phase === 'play' ? (myTurn ? '轮到你出牌' : game.aiThinking ? '澜音正在思量…' : '澜音出牌中') : state.phase === 'round_end' ? '小局结束' : '比赛结束'}
-        </div>
+    <section className="dth-clash" aria-label="港湾对决三塔牌桌">
+      {game.error !== null && <div className="dth-inline-error" role="alert"><span>{game.error}</span><button type="button" onClick={game.clearError}>知道了</button></div>}
+      <header className="dth-game-hud">
+        <div><span className="dth-kicker">HARBOR CLASH</span><strong>先夺两座航标</strong></div>
+        <div className="dth-tower-score" aria-label="航标比分"><span>你 <b>{claimedCount(state, 'human')}</b></span><i /><i /><i /><span><b>{claimedCount(state, 'lanyin')}</b> 澜音</span></div>
+        <span className={`dth-turn-pill${myTurn ? ' active' : ''}`}>{state.phase === 'match_over' ? '对决结束' : myTurn ? '选择牌与航线' : game.aiThinking ? '澜音正在布局…' : '等待澜音'}</span>
       </header>
 
-      <FieldRow player="lanyin" state={state} />
+      <div className="dth-clash-board">
+        {state.lanes.map((lane) => (
+          <LaneColumn
+            key={lane.id}
+            lane={lane}
+            myTurn={myTurn}
+            selectedCard={selectedCard}
+            selected={game.selectedLane === lane.id}
+            onSelect={() => game.setSelectedLane(game.selectedLane === lane.id ? null : lane.id)}
+            onDeploy={() => game.deploy(lane.id)}
+          />
+        ))}
+      </div>
 
-      <div className="dth-clash-divider" aria-hidden="true">· · ·</div>
+      <div className="dth-clash-event" role="status"><span className={game.aiThinking ? 'thinking' : ''} /><p>{state.lastEvent}</p></div>
 
-      <FieldRow player="human" state={state} />
+      {state.phase === 'play' ? (
+        <section className="dth-clash-hand-area" aria-label="你的信号牌">
+          <header><div><span className="dth-kicker">YOUR SIGNALS</span><strong>你的手牌</strong></div><small>{selectedCard === undefined ? '先选一张牌，再选择航线' : `已选 ${SUIT_LABEL[selectedCard.suit]} ${selectedCard.value}`}</small></header>
+          <div className="dth-clash-hand" role="list">
+            {state.hands.human.map((card) => <SignalCard key={card.id} card={card} selected={card.id === game.selectedId} disabled={!myTurn} onClick={() => game.setSelectedId(card.id === game.selectedId ? null : card.id)} />)}
+          </div>
+          <button type="button" className="dth-primary-button dth-deploy-main" onClick={() => game.deploy()} disabled={!myTurn || selectedCard === undefined || game.selectedLane === null}>确认部署</button>
+        </section>
+      ) : (
+        <div className="dth-round-result final" role="status">
+          <span className="dth-kicker">HARBOR SECURED</span>
+          <strong>{state.winner === null ? '三条航线势均力敌' : state.winner === 'human' ? '港湾回应了你的信号' : '澜音先控制了两座航标'}</strong>
+          <small>航标 · 你 {claimedCount(state, 'human')} — {claimedCount(state, 'lanyin')} 澜音</small>
+          <button type="button" className="dth-primary-button" onClick={game.start}>重新布阵</button>
+        </div>
+      )}
 
-      <section className="dth-clash-hand" aria-label="你的手牌">
-        {mine.hand.length === 0 && <span className="dth-clash-empty">手牌已出完</span>}
-        {mine.hand.map((card, index) => {
-          const selected = game.selectedId === card.id
-          return (
-            <button
-              key={card.id}
-              type="button"
-              className={`dth-clash-hand-card${selected ? ' selected' : ''}${card.kind !== 'unit' ? ` kind-${card.kind}` : ''}`}
-              onClick={() => { game.setSelectedId(selected ? null : card.id) }}
-              disabled={!myTurn}
-              aria-label={`${card.name}，${card.power} 战力${KIND_LABEL[card.kind] !== '战力牌' ? `，${KIND_LABEL[card.kind]}` : ''}${selected ? '，已选中' : ''}`}
-            >
-              <span className="dth-clash-hand-power">{card.power}</span>
-              <span className="dth-clash-hand-name">{card.name}</span>
-              {KIND_MARK[card.kind] !== '' && <span className="dth-clash-hand-kind" aria-hidden="true">{KIND_MARK[card.kind]}</span>}
-            </button>
-          )
-        })}
-      </section>
-
-      <footer className="dth-clash-actions">
-        {state.phase === 'play' && (
-          <>
-            <button type="button" className="dth-primary-button" onClick={() => { if (game.selectedId !== null) game.play(game.selectedId) }} disabled={!myTurn || game.selectedId === null}>
-              出牌{game.selectedId !== null ? `（${mine.hand.find((c) => c.id === game.selectedId)?.name ?? ''}）` : '：先选一张牌'}
-            </button>
-            <button type="button" className="dth-text-button" onClick={game.passRound} disabled={!myTurn}>
-              过牌（免战本小局）
-            </button>
-          </>
-        )}
-        {state.phase === 'round_end' && (
-          <button type="button" className="dth-primary-button" onClick={game.advance}>
-            下一小局（第 {state.round + 1}/3）
-          </button>
-        )}
-        {state.phase === 'match_over' && (
-          <>
-            <p className={`dth-clash-result${state.matchWinner === 'human' ? ' win' : state.matchWinner === null ? ' draw' : ' loss'}`} role="status">
-              {state.matchWinner === null ? '比赛平局' : state.matchWinner === 'human' ? '你赢得了港湾对决！' : '澜音赢得了比赛'}
-              <span className="dth-clash-result-score">{state.scores.human} : {state.scores.lanyin}</span>
-            </p>
-            <button type="button" className="dth-primary-button" onClick={game.startMatch}>再来一局</button>
-          </>
-        )}
-      </footer>
-    </div>
+      <details className="dth-formation-guide">
+        <summary>阵型速查</summary>
+        <div>{[5, 4, 3, 2, 1].map((tier) => <span key={tier}><b>{6 - tier}</b>{FORMATION_LABEL[tier]}</span>)}</div>
+      </details>
+    </section>
   )
 }
 
@@ -310,16 +271,16 @@ export const harborClashGame: GameModule = {
   manifest: {
     id: GAME_ID,
     title: '港湾对决',
-    tagline: '昆特式三局两胜卡牌对决',
-    duration: '5–8 分钟',
-    intensity: 'medium',
-    why: '出牌或过牌，三局两胜。16 张港湾卡牌，四种能力，考验时机与判断。',
-    glyph: '🌊',
-    accent: 262,
+    tagline: '三条航线，每一张牌都是承诺',
+    duration: '8–12 分钟',
+    intensity: 'heavy',
+    why: '把有限手牌押在三座航标上：做强自己的阵型，也要读懂澜音正在争哪一线。',
+    glyph: '塔',
+    accent: 31,
   },
   hasSave: () => slotExists(GAME_ID),
   clearSave: () => clearSlot(GAME_ID),
   View: HarborClashView,
 }
 
-export type { GameServices }
+export type { GameServices, Player }

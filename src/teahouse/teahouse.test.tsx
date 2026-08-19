@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { fireEvent, render, screen, cleanup, waitFor } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createMatch } from '../game/engine.ts'
 import { clearAllTeahouseStorage, loadShellState, loadSlot, saveSlot, slotExists } from './storage.ts'
 import type { MemoryEntry } from './lanyin/memory.ts'
@@ -6,6 +7,7 @@ import type { MemoryEntry } from './lanyin/memory.ts'
 const LEGACY_KEY = 'dsh-whale-cards:save:v1'
 
 afterEach(() => {
+  cleanup()
   clearAllTeahouseStorage()
 })
 
@@ -54,6 +56,13 @@ describe('teahouse storage v2', () => {
     expect(slotExists('gin-rummy')).toBe(true)
     expect(slotExists('harbor-pairs')).toBe(true)
     expect(slotExists('unknown-game')).toBe(false)
+  })
+
+  it('removes empty saves instead of showing a false continue state', () => {
+    saveSlot('gin-rummy', { marker: 'started' })
+    expect(slotExists('gin-rummy')).toBe(true)
+    saveSlot('gin-rummy', null)
+    expect(slotExists('gin-rummy')).toBe(false)
   })
 
   it('degrades to defaults on corrupt shell state', () => {
@@ -145,11 +154,76 @@ describe('lanyin service degradation', () => {
   })
 })
 
+describe('lanyin real game Agent controller', () => {
+  it('opens one match session, receives a legal decision, then disposes it', async () => {
+    const caller = {
+      models: vi.fn(async () => ({ ok: true as const, models: [{ provider: 'deepseek', model: 'chat', displayName: 'DeepSeek Chat' }] })),
+      chat: vi.fn(async () => ({ ok: true as const, text: '普通聊天' })),
+      startAgent: vi.fn(async (request: { sessionId: string }) => ({ ok: true as const, value: { sessionId: request.sessionId } })),
+      turnAgent: vi.fn(async () => ({ ok: true as const, value: { actionId: 'play:a', line: '这张牌，我认真出了。', intent: 'ruthless' as const } })),
+      chatAgent: vi.fn(async () => ({ ok: true as const, value: { text: '我还在这局里。' } })),
+      eventAgent: vi.fn(async () => ({ ok: true as const, value: { text: '任务那边亮灯了。' } })),
+      endAgent: vi.fn(async () => ({ ok: true as const, value: {} })),
+    }
+    const { LanyinService } = await import('./lanyin/service.ts')
+    const service = new LanyinService(caller)
+    await service.refreshModels()
+
+    expect(await service.beginGameAgent({ gameId: 'test', gameTitle: '测试牌局', rules: '选一张牌。' })).toBe(true)
+    expect(service.getSnapshot().agentSessionId).toMatch(/^lanyin-game-/)
+    const decision = await service.chooseGameAction({ situation: '轮到你。', legalActions: [{ id: 'play:a', label: '出 A' }] })
+    expect(decision?.actionId).toBe('play:a')
+    expect(service.getSnapshot().chat.at(-1)?.text).toContain('认真')
+
+    await service.endGameAgent()
+    expect(caller.endAgent).toHaveBeenCalledOnce()
+    expect(service.getSnapshot().agentSessionId).toBeNull()
+  })
+
+  it('offers in-match coaching and mood prompts in the same Agent session', async () => {
+    const caller = {
+      models: vi.fn(async () => ({ ok: true as const, models: [{ provider: 'deepseek', model: 'chat', displayName: 'DeepSeek Chat' }] })),
+      chat: vi.fn(async () => ({ ok: true as const, text: '普通聊天' })),
+      startAgent: vi.fn(async (request: { sessionId: string }) => ({ ok: true as const, value: { sessionId: request.sessionId } })),
+      turnAgent: vi.fn(async () => ({ ok: true as const, value: { actionId: 'pass', line: '过。', intent: 'fair' as const } })),
+      chatAgent: vi.fn(async (_request: { sessionId: string }) => ({ ok: true as const, value: { text: '先看住关键牌。' } })),
+      eventAgent: vi.fn(async () => ({ ok: true as const, value: { text: '知道了。' } })),
+      endAgent: vi.fn(async () => ({ ok: true as const, value: {} })),
+    }
+    const { LanyinService } = await import('./lanyin/service.ts')
+    const { LanyinDock } = await import('./LanyinDock.tsx')
+    const service = new LanyinService(caller)
+    await service.refreshModels()
+    await service.beginGameAgent({ gameId: 'test', gameTitle: '测试牌局', rules: '选牌或过牌。' })
+    render(<LanyinDock lanyin={service} collapsed={false} onToggleCollapsed={() => {}} />)
+
+    fireEvent.click(screen.getByRole('button', { name: '教我这一步' }))
+    await waitFor(() => { expect(caller.chatAgent).toHaveBeenCalledOnce() })
+    expect(caller.chatAgent.mock.calls[0]?.[0].sessionId).toBe(service.getSnapshot().agentSessionId)
+    expect(await screen.findByText('先看住关键牌。')).not.toBeNull()
+    service.dispose()
+  })
+})
+
+describe('teahouse quick launcher', () => {
+  it('opens the configured default game without visiting the lobby', async () => {
+    const { LanyinService } = await import('./lanyin/service.ts')
+    const { TeahouseApp } = await import('./TeahouseApp.tsx')
+    const service = new LanyinService(null)
+    render(<TeahouseApp lanyin={service} />)
+
+    fireEvent.click(screen.getByRole('button', { name: /直接进入默认游戏：鲸牌 Gin Rummy/ }))
+    expect(await screen.findByRole('button', { name: '入座开牌' })).not.toBeNull()
+    expect(screen.queryByRole('heading', { name: '今晚玩什么' })).toBeNull()
+  })
+})
+
 describe('game module contract', () => {
-  it('both registered games satisfy the GameModule seam', async () => {
+  it('every registered game satisfies the GameModule seam', async () => {
     const { ginRummyGame } = await import('../games/gin-rummy/module.tsx')
     const { harborPairsGame } = await import('../games/harbor-pairs/module.tsx')
-    for (const game of [ginRummyGame, harborPairsGame]) {
+    const { harborClashGame } = await import('../games/harbor-clash/module.tsx')
+    for (const game of [ginRummyGame, harborPairsGame, harborClashGame]) {
       expect(typeof game.manifest.id).toBe('string')
       expect(game.manifest.title.length).toBeGreaterThan(0)
       expect(game.manifest.why.length).toBeGreaterThan(0)
@@ -171,5 +245,13 @@ describe('persona prompt assembly', () => {
     expect(prompt).toContain('澜音')
     expect(prompt).toContain('用户喜欢乌龙茶')
     expect(prompt).toContain('玩家刚敲牌')
+  })
+})
+
+describe('lanyin expressions', () => {
+  it('keeps match outcomes emotionally consistent across every game', async () => {
+    const { expressionForEvent } = await import('./lanyin/persona.ts')
+    expect(expressionForEvent('match_win')).toBe('happy')
+    expect(expressionForEvent('match_loss')).toBe('proud')
   })
 })

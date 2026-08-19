@@ -8,7 +8,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { playAiTurn } from '../../game/ai.ts'
-import { createMatch, discardCard, drawCard, passAtWall, startNextHand } from '../../game/engine.ts'
+import { rankLabel, suitSymbol } from '../../game/cards.ts'
+import { canKnockWithUpcard, createMatch, discardCard, drawCard, passAtWall, startNextHand } from '../../game/engine.ts'
 import {
   DEFAULT_PREFERENCES,
   DEFAULT_STATS,
@@ -23,11 +24,57 @@ import { RulesPanel } from '../../ui/RulesPanel.tsx'
 import { SettingsPanel } from '../../ui/SettingsPanel.tsx'
 import { TableView } from '../../ui/TableView.tsx'
 import { WelcomeView } from '../../ui/WelcomeView.tsx'
-import { LANYIN_HARBOR_ART } from '../../client/generated/art.ts'
+import { TEAHOUSE_HARBOR_ART } from '../../client/generated/art.ts'
 import type { GameModule, GameServices, GameViewProps } from '../../teahouse/types.ts'
 import { clearSlot, loadSlot, saveSlot, slotExists } from '../../teahouse/storage.ts'
+import { GAME_STYLES, STYLE_ELEMENT_ID } from '../../ui/styles.ts'
 
 const GAME_ID = 'gin-rummy'
+const AGENT_RULES = '标准双人 Gin Rummy，三手累计得分。每回合先从牌堆或弃牌堆顶摸一张，再弃一张；死木不超过 10 点可敲牌，0 点为 Gin。不能立刻弃掉刚从弃牌堆拿起的牌。牌堆只剩两张时只能用明牌完成合法敲牌，否则结束本手。'
+
+function cardLabel(card: MatchState['hands']['lanyin'][number]): string {
+  return `${suitSymbol(card.suit)}${rankLabel(card.rank)}`
+}
+
+async function playAgentTurn(state: MatchState, services: GameServices): Promise<{ next: MatchState; line: string }> {
+  const drawActions: { id: string; label: string }[] = []
+  if (state.stock.length > 2) drawActions.push({ id: 'draw:stock', label: `从暗牌堆摸牌（剩 ${state.stock.length} 张，摸到什么未知）` })
+  const upcard = state.discard.at(-1)
+  if (upcard !== undefined && (state.stock.length > 2 || canKnockWithUpcard(state, 'lanyin'))) {
+    drawActions.push({ id: 'draw:discard', label: `拿走弃牌堆顶的 ${cardLabel(upcard)}` })
+  }
+  if (drawActions.length === 0) return { next: passAtWall(state, 'lanyin'), line: '潮墙到了，这手先收住。' }
+
+  const drawDecision = await services.chooseAgentAction({
+    situation: `第 ${state.round}/${state.rules.handCount} 手。比分：玩家 ${state.scores.human}，你 ${state.scores.lanyin}。你的手牌：${state.hands.lanyin.map(cardLabel).join('、')}。弃牌堆顶：${upcard === undefined ? '空' : cardLabel(upcard)}。暗牌堆剩 ${state.stock.length} 张。现在选择摸牌来源。`,
+    legalActions: drawActions,
+  })
+  if (drawDecision === null) throw new Error('Agent 未完成摸牌选择')
+  const source: DrawSource = drawDecision.actionId === 'draw:discard' ? 'discard' : 'stock'
+  const afterDraw = drawCard(state, 'lanyin', source)
+
+  const discardActions: { id: string; label: string }[] = []
+  for (const card of afterDraw.hands.lanyin) {
+    try {
+      discardCard(afterDraw, 'lanyin', card.id, 'discard')
+      discardActions.push({ id: `discard:${card.id}`, label: `弃掉 ${cardLabel(card)}，继续本手` })
+    } catch { /* engine says this discard is not legal */ }
+    try {
+      const knocked = discardCard(afterDraw, 'lanyin', card.id, 'knock')
+      const kind = knocked.handResult?.kind === 'gin' ? 'Gin' : '敲牌'
+      discardActions.push({ id: `knock:${card.id}`, label: `弃掉 ${cardLabel(card)}并${kind}，立即结算本手` })
+    } catch { /* not a legal knock */ }
+  }
+  const discardDecision = await services.chooseAgentAction({
+    situation: `你刚${source === 'stock' ? '从暗牌堆摸到' : '从弃牌堆拿到'} ${afterDraw.hands.lanyin.find((card) => card.id === afterDraw.drawnCardId) ? cardLabel(afterDraw.hands.lanyin.find((card) => card.id === afterDraw.drawnCardId)!) : '一张牌'}。现在的手牌：${afterDraw.hands.lanyin.map(cardLabel).join('、')}。请选择弃牌，若合法也可敲牌。`,
+    legalActions: discardActions,
+  })
+  if (discardDecision === null) throw new Error('Agent 未完成弃牌选择')
+  const separator = discardDecision.actionId.indexOf(':')
+  const intent = discardDecision.actionId.slice(0, separator) === 'knock' ? 'knock' : 'discard'
+  const cardId = discardDecision.actionId.slice(separator + 1)
+  return { next: discardCard(afterDraw, 'lanyin', cardId, intent), line: discardDecision.line || drawDecision.line }
+}
 
 function resultDialogue(match: MatchState): DialogueEvent | null {
   if (match.phase !== 'match_over') return null
@@ -53,11 +100,24 @@ function useGinRummyGame(services: GameServices) {
     ...(services.getPreference('ginRummy') as Partial<PlayerPreferences> | undefined),
   }), [services])
   const dialogueIndex = useRef(0)
+  const resumedAgentStarted = useRef(false)
   const playSound = useGameAudio(preferences.muted)
+  const servicesRef = useRef(services)
+  const preferencesRef = useRef(preferences)
+  const playSoundRef = useRef(playSound)
+  servicesRef.current = services
+  preferencesRef.current = preferences
+  playSoundRef.current = playSound
 
   useEffect(() => {
     saveSlot(GAME_ID, match)
   }, [match])
+
+  useEffect(() => {
+    if (resumedAgentStarted.current || match === null || services.playMode() !== 'agent') return
+    resumedAgentStarted.current = true
+    void services.beginAgentGame({ gameId: GAME_ID, gameTitle: '鲸牌 Gin Rummy', rules: AGENT_RULES })
+  }, [match, services])
 
   useEffect(() => {
     const onVisibility = (): void => setDocumentVisible(document.visibilityState !== 'hidden')
@@ -73,13 +133,17 @@ function useGinRummyGame(services: GameServices) {
     setDialogue(dialogueLine(event, match?.seed ?? 1, dialogueIndex.current))
     services.lanyinRemark(event, context ?? `对局事件：${event}`)
   }, [match?.seed, preferences.dialogue, services])
+  const speakRef = useRef(speak)
+  speakRef.current = speak
 
   const finishMatch = useCallback((next: MatchState) => {
     if (next.phase === 'match_over') {
+      resumedAgentStarted.current = false
       services.reportMatchResult({
         won: next.scores.human > next.scores.lanyin,
         draw: next.scores.human === next.scores.lanyin,
       })
+      void services.endAgentGame(situationLine(next))
     }
   }, [services])
 
@@ -87,39 +151,63 @@ function useGinRummyGame(services: GameServices) {
     setMatch(next)
     finishMatch(next)
   }, [finishMatch])
+  const commitMatchRef = useRef(commitMatch)
+  commitMatchRef.current = commitMatch
+  const scheduledTurnRef = useRef<string | null>(null)
+
+  const aiTurnKey = match !== null && match.turn === 'lanyin' && match.phase === 'draw'
+    ? `${match.seed}:${match.round}:${match.history.length}`
+    : null
 
   useEffect(() => {
-    if (!documentVisible || match === null || match.turn !== 'lanyin' || match.phase !== 'draw') {
+    if (!documentVisible || match === null || aiTurnKey === null) {
       setAiThinking(false)
+      scheduledTurnRef.current = null
       return
     }
+    // Schedule each Lanyin turn exactly once, keyed by the turn itself. In agent
+    // mode the move costs two sequential model round-trips, and Lanyin's own
+    // chatter re-renders the shell while they are in flight; tearing the turn
+    // down on cleanup would discard a move that was already paid for and strand
+    // aiThinking at true — she would keep talking and never play a card.
+    if (scheduledTurnRef.current === aiTurnKey) return
+    scheduledTurnRef.current = aiTurnKey
     setAiThinking(true)
-    const timer = window.setTimeout(() => {
-      if (document.visibilityState === 'hidden') return
+    const turnServices = servicesRef.current
+    const turnPreferences = preferencesRef.current
+    const timer = window.setTimeout(async () => {
+      if (document.visibilityState === 'hidden') {
+        setAiThinking(false)
+        scheduledTurnRef.current = null
+        return
+      }
       try {
-        const next = playAiTurn(match, preferences.difficulty)
-        commitMatch(next)
+        const agentMove = turnServices.playMode() === 'agent' ? await playAgentTurn(match, turnServices).catch(() => null) : null
+        const next = agentMove?.next ?? playAiTurn(match, turnPreferences.difficulty)
+        commitMatchRef.current(next)
         setSelectedCardId(null)
         setError(null)
-        playSound(next.phase === 'reveal' || next.phase === 'match_over' ? 'result' : 'place')
+        playSoundRef.current(next.phase === 'reveal' || next.phase === 'match_over' ? 'result' : 'place')
+        if (agentMove?.line.trim()) setDialogue(agentMove.line)
         const matchLine = resultDialogue(next)
-        if (matchLine !== null) speak(matchLine, false, situationLine(next))
+        if (matchLine !== null) speakRef.current(matchLine, false, situationLine(next))
         else {
           const last = next.history.slice(match.history.length).at(-1)
-          if (last?.type === 'gin') speak('ai_gin')
-          else if (last?.type === 'knock') speak('ai_knock')
+          if (last?.type === 'gin') speakRef.current('ai_gin')
+          else if (last?.type === 'knock') speakRef.current('ai_knock')
+          else if (last?.type === 'take_discard') speakRef.current('ai_take_discard')
         }
       } catch (cause) {
+        scheduledTurnRef.current = null
         setError(cause instanceof Error ? cause.message : '澜音暂时没接住这手牌。')
       } finally {
         setAiThinking(false)
       }
-    }, preferences.fastAi ? 120 : 560)
+    }, turnPreferences.fastAi ? 120 : 560)
     return () => {
       window.clearTimeout(timer)
-      setAiThinking(false)
     }
-  }, [match, preferences.difficulty, preferences.fastAi, commitMatch, documentVisible, playSound, speak])
+  }, [aiTurnKey, documentVisible, match])
 
   const startMatch = useCallback(() => {
     const next = createMatch()
@@ -128,6 +216,10 @@ function useGinRummyGame(services: GameServices) {
     setError(null)
     setDialogue(dialogueLine('greeting', next.seed))
     playSound('deal')
+    if (services.playMode() === 'agent') {
+      resumedAgentStarted.current = true
+      void services.beginAgentGame({ gameId: GAME_ID, gameTitle: '鲸牌 Gin Rummy', rules: AGENT_RULES })
+    }
   }, [commitMatch, playSound])
 
   const draw = useCallback((source: DrawSource) => {
@@ -236,7 +328,8 @@ export function GinRummyView({ services }: GameViewProps): React.JSX.Element {
   }, [game, match])
 
   return (
-    <div className="dwc-game">
+    <div className="dwc-root dwc-game">
+      <style id={STYLE_ELEMENT_ID}>{GAME_STYLES}</style>
       {game.error !== null && (
         <div className="dwc-error" role="alert">
           <span>{game.error}</span>
@@ -245,7 +338,7 @@ export function GinRummyView({ services }: GameViewProps): React.JSX.Element {
       )}
       {match === null ? (
         <WelcomeView
-          artUrl={LANYIN_HARBOR_ART}
+          artUrl={TEAHOUSE_HARBOR_ART}
           stats={stats}
           onStart={() => {
             if (!services.getPreference('tutorialSeen')) {
@@ -265,12 +358,14 @@ export function GinRummyView({ services }: GameViewProps): React.JSX.Element {
           aiThinking={game.aiThinking}
           dialogue={game.dialogue}
           rapport={stats.rapport}
-          artUrl={LANYIN_HARBOR_ART}
+          artUrl={TEAHOUSE_HARBOR_ART}
           onSelectCard={game.setSelectedCardId}
           onDraw={game.draw}
           onDiscard={({ cardId, kind }) => game.discard(kind, cardId)}
           onPassWall={game.passWall}
           onChat={() => { game.speak('chat', true) }}
+          onRules={() => game.setRulesOpen(true)}
+          onSettings={() => game.setSettingsOpen(true)}
         />
       )}
       <RulesPanel
