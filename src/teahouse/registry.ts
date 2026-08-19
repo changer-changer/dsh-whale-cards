@@ -10,6 +10,7 @@ import type { ComponentType } from 'react'
 import type { GameManifest, GameViewProps } from './types.ts'
 import { ginRummyGame } from '../games/gin-rummy/module.tsx'
 import { harborPairsGame } from '../games/harbor-pairs/module.tsx'
+import { harborClashGame } from '../games/harbor-clash/module.tsx'
 
 export interface GameRegistration {
   readonly manifest: GameManifest
@@ -27,5 +28,10 @@ export const GAME_REGISTRY: readonly GameRegistration[] = [
     manifest: harborPairsGame.manifest,
     View: lazy(async () => ({ default: harborPairsGame.View })) as ComponentType<GameViewProps>,
     clearSave: harborPairsGame.clearSave,
+  },
+  {
+    manifest: harborClashGame.manifest,
+    View: lazy(async () => ({ default: harborClashGame.View })) as ComponentType<GameViewProps>,
+    clearSave: harborClashGame.clearSave,
   },
 ]

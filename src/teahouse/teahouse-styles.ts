@@ -377,6 +377,104 @@ export const TEAHOUSE_STYLES = String.raw`
 }
 .dth-pairs-done { margin: 0.8rem 0 0; text-align: center; color: var(--dth-teal); font-size: 0.9rem; }
 
+/* ---------- harbor clash ---------- */
+
+.dth-clash-intro {
+  display: grid; justify-items: center; gap: 0.7rem;
+  max-width: 26rem; margin: 2.5rem auto; text-align: center;
+}
+.dth-clash-intro h2 { margin: 0; font-size: 1.2rem; }
+.dth-clash-intro p { margin: 0; color: var(--dth-muted); font-size: 0.84rem; }
+.dth-clash-glyph { font-size: 2.4rem; }
+.dth-clash-hint { color: var(--dth-faint) !important; font-size: 0.74rem !important; }
+.dth-clash-hint strong { color: var(--dth-muted); font-weight: 600; }
+
+.dth-clash { max-width: 34rem; margin: 0 auto; display: grid; gap: 0.7rem; }
+.dth-clash-header {
+  display: flex; align-items: center; gap: 0.8rem;
+  padding-bottom: 0.6rem; border-bottom: 1px solid var(--dth-line);
+}
+.dth-clash-rounds { display: flex; gap: 0.25rem; color: var(--dth-line); font-size: 0.8rem; }
+.dth-clash-rounds span.lit { color: var(--dth-teal); }
+.dth-clash-score { display: flex; align-items: center; gap: 0.45rem; color: var(--dth-muted); font-size: 0.8rem; }
+.dth-clash-score strong { color: var(--dth-text); font-size: 0.95rem; }
+.dth-clash-score .sep { color: var(--dth-faint); }
+.dth-clash-turn { margin-left: auto; color: var(--dth-amber); font-size: 0.74rem; }
+
+.dth-clash-side { display: grid; gap: 0.4rem; }
+.dth-clash-side-meta { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; color: var(--dth-muted); font-size: 0.72rem; }
+.dth-clash-side-name { color: var(--dth-text); font-size: 0.78rem; }
+.dth-clash-hand-count { color: var(--dth-faint); }
+.dth-clash-power { margin-left: auto; color: var(--dth-muted); }
+.dth-clash-power strong { color: var(--dth-text); font-size: 1rem; }
+.dth-clash-badge {
+  font-size: 0.62rem; font-weight: 600;
+  padding: 0.1rem 0.45rem; border-radius: 99px;
+}
+.dth-clash-badge.fog { color: hsl(262 60% 80%); background: hsl(262 45% 20%); border: 1px solid hsl(262 45% 38%); }
+.dth-clash-badge.passed { color: var(--dth-faint); background: rgb(9 25 33 / 60%); border: 1px solid var(--dth-line); }
+
+.dth-clash-field { display: flex; gap: 0.4rem; flex-wrap: wrap; min-height: 2.6rem; align-items: center; }
+.dth-clash-empty { color: var(--dth-faint); font-size: 0.7rem; }
+.dth-clash-field-card {
+  display: flex; align-items: center; gap: 0.4rem;
+  border: 1px solid var(--dth-line);
+  border-radius: 0.6rem;
+  background: var(--dth-panel-soft);
+  padding: 0.28rem 0.55rem;
+}
+.dth-clash-field-power {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 1.5rem; height: 1.5rem;
+  border-radius: 0.45rem;
+  background: hsl(var(--dth-accent) 40% 22%);
+  color: var(--dth-text);
+  font-size: 0.82rem; font-weight: 700;
+}
+.dth-clash-field-name { font-size: 0.74rem; color: var(--dth-text); }
+
+.dth-clash-divider { text-align: center; color: var(--dth-faint); font-size: 0.7rem; letter-spacing: 0.3em; margin: -0.2rem 0; }
+
+.dth-clash-hand { display: flex; gap: 0.4rem; flex-wrap: wrap; min-height: 3.2rem; }
+.dth-clash-hand-card {
+  position: relative;
+  display: grid; justify-items: center; gap: 0.15rem;
+  min-width: 3.6rem; padding: 0.45rem 0.5rem 0.5rem;
+  border: 1px solid var(--dth-line);
+  border-radius: 0.7rem;
+  background: linear-gradient(160deg, var(--dth-panel-soft), var(--dth-panel));
+  color: var(--dth-text);
+  cursor: pointer;
+  transition: transform 130ms ease, border-color 130ms ease, background 130ms ease;
+}
+.dth-clash-hand-card:not(:disabled):hover { transform: translateY(-3px); border-color: hsl(175 50% 50%); }
+.dth-clash-hand-card.selected {
+  border-color: var(--dth-teal);
+  background: hsl(175 40% 20%);
+  transform: translateY(-3px);
+  box-shadow: 0 8px 20px rgb(0 0 0 / 30%);
+}
+.dth-clash-hand-card:disabled { opacity: 0.65; cursor: default; }
+.dth-clash-hand-card.kind-horn { border-color: hsl(262 45% 42%); }
+.dth-clash-hand-card.kind-draw { border-color: hsl(32 50% 40%); }
+.dth-clash-hand-card.kind-fog { border-color: hsl(195 45% 36%); }
+.dth-clash-hand-power { font-size: 1.05rem; font-weight: 700; }
+.dth-clash-hand-name { font-size: 0.66rem; color: var(--dth-muted); }
+.dth-clash-hand-kind { position: absolute; top: 0.22rem; right: 0.32rem; font-size: 0.68rem; }
+
+.dth-clash-actions { display: flex; align-items: center; gap: 0.8rem; flex-wrap: wrap; padding-top: 0.3rem; }
+.dth-clash-actions .dth-text-button { margin-left: 0; }
+.dth-clash-result {
+  margin: 0; font-size: 0.95rem; font-weight: 600; display: flex; align-items: center; gap: 0.6rem;
+}
+.dth-clash-result.win { color: var(--dth-teal); }
+.dth-clash-result.draw { color: var(--dth-amber); }
+.dth-clash-result.loss { color: var(--dth-danger); }
+.dth-clash-result-score {
+  font-size: 0.74rem; font-weight: 500; color: var(--dth-muted);
+  border: 1px solid var(--dth-line); border-radius: 99px; padding: 0.1rem 0.55rem;
+}
+
 /* ---------- lanyin dock ---------- */
 
 .dth-dock {
