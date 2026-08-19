@@ -127,7 +127,7 @@ export function TeahouseApp({ initiallyOpen, preview = false, taskSource, lanyin
         return loadSlot(activeGame.manifest.id) as S | null
       },
       taskNotice: () => noticeRef.current,
-      clearTaskNotice: () => { task.clear() },
+      clearTaskNotice: task.clear,
       getPreference: (key) => store[key],
       setPreferences: (patch) => {
         Object.assign(store, patch)
@@ -146,7 +146,7 @@ export function TeahouseApp({ initiallyOpen, preview = false, taskSource, lanyin
         }))
       },
     }
-  }, [activeGame, lanyin, shell.preferences, shell.shell, shell.stats, task])
+  }, [activeGame, lanyin, shell.preferences, shell.shell, shell.stats, task.clear])
 
   const closeAll = useCallback(() => {
     setOpen(false)

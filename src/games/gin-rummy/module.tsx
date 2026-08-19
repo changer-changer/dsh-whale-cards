@@ -102,6 +102,12 @@ function useGinRummyGame(services: GameServices) {
   const dialogueIndex = useRef(0)
   const resumedAgentStarted = useRef(false)
   const playSound = useGameAudio(preferences.muted)
+  const servicesRef = useRef(services)
+  const preferencesRef = useRef(preferences)
+  const playSoundRef = useRef(playSound)
+  servicesRef.current = services
+  preferencesRef.current = preferences
+  playSoundRef.current = playSound
 
   useEffect(() => {
     saveSlot(GAME_ID, match)
@@ -127,6 +133,8 @@ function useGinRummyGame(services: GameServices) {
     setDialogue(dialogueLine(event, match?.seed ?? 1, dialogueIndex.current))
     services.lanyinRemark(event, context ?? `对局事件：${event}`)
   }, [match?.seed, preferences.dialogue, services])
+  const speakRef = useRef(speak)
+  speakRef.current = speak
 
   const finishMatch = useCallback((next: MatchState) => {
     if (next.phase === 'match_over') {
@@ -143,6 +151,8 @@ function useGinRummyGame(services: GameServices) {
     setMatch(next)
     finishMatch(next)
   }, [finishMatch])
+  const commitMatchRef = useRef(commitMatch)
+  commitMatchRef.current = commitMatch
 
   useEffect(() => {
     if (!documentVisible || match === null || match.turn !== 'lanyin' || match.phase !== 'draw') {
@@ -151,36 +161,38 @@ function useGinRummyGame(services: GameServices) {
     }
     setAiThinking(true)
     let cancelled = false
+    const turnServices = servicesRef.current
+    const turnPreferences = preferencesRef.current
     const timer = window.setTimeout(async () => {
       if (document.visibilityState === 'hidden') return
       try {
-        const agentMove = services.playMode() === 'agent' ? await playAgentTurn(match, services).catch(() => null) : null
+        const agentMove = turnServices.playMode() === 'agent' ? await playAgentTurn(match, turnServices).catch(() => null) : null
         if (cancelled) return
-        const next = agentMove?.next ?? playAiTurn(match, preferences.difficulty)
-        commitMatch(next)
+        const next = agentMove?.next ?? playAiTurn(match, turnPreferences.difficulty)
+        commitMatchRef.current(next)
         setSelectedCardId(null)
         setError(null)
-        playSound(next.phase === 'reveal' || next.phase === 'match_over' ? 'result' : 'place')
+        playSoundRef.current(next.phase === 'reveal' || next.phase === 'match_over' ? 'result' : 'place')
         if (agentMove?.line.trim()) setDialogue(agentMove.line)
         const matchLine = resultDialogue(next)
-        if (matchLine !== null) speak(matchLine, false, situationLine(next))
+        if (matchLine !== null) speakRef.current(matchLine, false, situationLine(next))
         else {
           const last = next.history.slice(match.history.length).at(-1)
-          if (last?.type === 'gin') speak('ai_gin')
-          else if (last?.type === 'knock') speak('ai_knock')
+          if (last?.type === 'gin') speakRef.current('ai_gin')
+          else if (last?.type === 'knock') speakRef.current('ai_knock')
         }
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : '澜音暂时没接住这手牌。')
       } finally {
-        setAiThinking(false)
+        if (!cancelled) setAiThinking(false)
       }
-    }, preferences.fastAi ? 120 : 560)
+    }, turnPreferences.fastAi ? 120 : 560)
     return () => {
       cancelled = true
       window.clearTimeout(timer)
       setAiThinking(false)
     }
-  }, [match, preferences.difficulty, preferences.fastAi, commitMatch, documentVisible, playSound, speak])
+  }, [match, documentVisible])
 
   const startMatch = useCallback(() => {
     const next = createMatch()
