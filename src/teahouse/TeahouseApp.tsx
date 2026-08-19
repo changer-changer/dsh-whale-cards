@@ -18,6 +18,7 @@ import { LanyinDock } from './LanyinDock.tsx'
 import { LanyinService } from './lanyin/service.ts'
 import { EXPRESSION_LABELS, type LanyinExpression } from './lanyin/persona.ts'
 import { GAME_REGISTRY } from './registry.ts'
+import { GAME_STYLES } from '../ui/styles.ts'
 import {
   DEFAULT_SHELL_PREFERENCES,
   loadShellState,
@@ -136,6 +137,7 @@ export function TeahouseApp({ initiallyOpen, preview = false, taskSource, lanyin
   return (
     <div className="dth-root" data-preview={preview ? 'true' : 'false'}>
       <style id={STYLE_ELEMENT_ID}>{TEAHOUSE_STYLES}</style>
+      <style id="dsh-teahouse-game-styles">{GAME_STYLES}</style>
 
       {!open && (
         <button className="dth-launcher" type="button" onClick={() => { setOpen(true) }} aria-label="打开茶歇间">
