@@ -23,7 +23,11 @@ const EXPRESSION_FACE: Readonly<Record<string, string>> = {
   offline: '•ᴗ•zzz',
 }
 
-export function LanyinDock({ lanyin }: { lanyin: LanyinService }): React.JSX.Element {
+export function LanyinDock({ lanyin, collapsed, onToggleCollapsed }: {
+  lanyin: LanyinService
+  collapsed: boolean
+  onToggleCollapsed: () => void
+}): React.JSX.Element {
   const state = useSyncExternalStore(lanyin.subscribe, lanyin.getSnapshot)
   const [tab, setTab] = useState<'chat' | 'soul' | 'memory' | 'model'>('chat')
   const [draft, setDraft] = useState('')
@@ -49,7 +53,7 @@ export function LanyinDock({ lanyin }: { lanyin: LanyinService }): React.JSX.Ele
   }
 
   return (
-    <aside className="dth-dock" aria-label="鲸鱼娘澜音">
+    <aside className={collapsed ? 'dth-dock dth-dock--collapsed' : 'dth-dock'} aria-label="鲸鱼娘澜音">
       <div className="dth-dock-bar">
         <span className="dth-dock-face" role="img" aria-label={`澜音（${EXPRESSION_LABELS[state.expression]}）`}>
           {EXPRESSION_FACE[state.expression] ?? '•ᴗ•'}
@@ -61,14 +65,28 @@ export function LanyinDock({ lanyin }: { lanyin: LanyinService }): React.JSX.Ele
             : state.modelLive ? (state.chosen ? `${state.chosen.model} · 守着 DSH 的潮汐` : '正在听 DSH 的回声') : '模型未连接 · 仍会守着牌桌'}</small>
         </div>
         <nav className="dth-dock-actions" aria-label="澜音面板">
-          <button type="button" className={`dth-dock-toggle${tab === 'chat' ? ' active' : ''}`} onClick={() => { setTab('chat') }}>聊天</button>
-          <button type="button" className={`dth-dock-toggle${tab === 'soul' ? ' active' : ''}`} onClick={() => { setTab('soul') }}>Soul</button>
-          <button type="button" className={`dth-dock-toggle${tab === 'memory' ? ' active' : ''}`} onClick={() => { setTab('memory') }}>记忆 {state.memories.length > 0 ? `(${state.memories.length})` : ''}</button>
-          <button type="button" className={`dth-dock-toggle${tab === 'model' ? ' active' : ''}`} onClick={() => { setTab('model') }}>模型</button>
+          {!collapsed && (
+            <>
+              <button type="button" className={`dth-dock-toggle${tab === 'chat' ? ' active' : ''}`} onClick={() => { setTab('chat') }}>聊天</button>
+              <button type="button" className={`dth-dock-toggle${tab === 'soul' ? ' active' : ''}`} onClick={() => { setTab('soul') }}>Soul</button>
+              <button type="button" className={`dth-dock-toggle${tab === 'memory' ? ' active' : ''}`} onClick={() => { setTab('memory') }}>记忆 {state.memories.length > 0 ? `(${state.memories.length})` : ''}</button>
+              <button type="button" className={`dth-dock-toggle${tab === 'model' ? ' active' : ''}`} onClick={() => { setTab('model') }}>模型</button>
+            </>
+          )}
+          <button
+            type="button"
+            className="dth-dock-toggle dth-dock-collapse"
+            onClick={onToggleCollapsed}
+            aria-expanded={!collapsed}
+            aria-label={collapsed ? '展开澜音面板' : '收起澜音面板'}
+            title={collapsed ? '展开澜音面板' : '收起澜音面板'}
+          >
+            {collapsed ? '▴' : '▾'}
+          </button>
         </nav>
       </div>
 
-      {tab === 'chat' && (
+      {!collapsed && tab === 'chat' && (
         <div className="dth-chat">
           <div className="dth-chat-log" ref={logRef} aria-live="polite">
             {state.chat.length === 0 && (
@@ -108,9 +126,9 @@ export function LanyinDock({ lanyin }: { lanyin: LanyinService }): React.JSX.Ele
         </div>
       )}
 
-      {tab === 'memory' && <MemoryPanel lanyin={lanyin} memories={state.memories} />}
-      {tab === 'soul' && <SoulPanel soul={state.soul} sessionId={state.agentSessionId} error={state.agentError} />}
-      {tab === 'model' && <ModelPanel lanyin={lanyin} />}
+      {!collapsed && tab === 'memory' && <MemoryPanel lanyin={lanyin} memories={state.memories} />}
+      {!collapsed && tab === 'soul' && <SoulPanel soul={state.soul} sessionId={state.agentSessionId} error={state.agentError} />}
+      {!collapsed && tab === 'model' && <ModelPanel lanyin={lanyin} />}
     </aside>
   )
 }

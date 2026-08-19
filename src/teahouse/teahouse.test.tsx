@@ -195,7 +195,7 @@ describe('lanyin real game Agent controller', () => {
     const service = new LanyinService(caller)
     await service.refreshModels()
     await service.beginGameAgent({ gameId: 'test', gameTitle: '测试牌局', rules: '选牌或过牌。' })
-    render(<LanyinDock lanyin={service} />)
+    render(<LanyinDock lanyin={service} collapsed={false} onToggleCollapsed={() => {}} />)
 
     fireEvent.click(screen.getByRole('button', { name: '教我这一步' }))
     await waitFor(() => { expect(caller.chatAgent).toHaveBeenCalledOnce() })

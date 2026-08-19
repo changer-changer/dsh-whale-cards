@@ -29,6 +29,26 @@ import {
 import type { GameServices } from './types.ts'
 import { TEAHOUSE_STYLES, STYLE_ELEMENT_ID } from './teahouse-styles.ts'
 
+const FULLSCREEN_KEY = 'dsh-teahouse:fullscreen:v1'
+const DOCK_COLLAPSED_KEY = 'dsh-teahouse:dock-collapsed:v1'
+
+function readFlag(key: string, fallback: boolean): boolean {
+  try {
+    const raw = localStorage.getItem(key)
+    return raw === null ? fallback : raw === '1'
+  } catch {
+    return fallback
+  }
+}
+
+function writeFlag(key: string, value: boolean): void {
+  try {
+    localStorage.setItem(key, value ? '1' : '0')
+  } catch {
+    /* best-effort */
+  }
+}
+
 export interface TeahouseAppProps {
   readonly initiallyOpen?: boolean
   readonly preview?: boolean
@@ -81,6 +101,8 @@ export function TeahouseApp({ initiallyOpen, preview = false, taskSource, lanyin
   const [open, setOpen] = useState(initiallyOpen ?? false)
   const [screen, setScreen] = useState<Screen>(() => (initiallyOpen === true ? { kind: 'lobby' } : { kind: 'lobby' }))
   const [shell, setShell] = useState<ShellState>(() => loadShellState())
+  const [fullscreen, setFullscreen] = useState(() => readFlag(FULLSCREEN_KEY, false))
+  const [dockCollapsed, setDockCollapsed] = useState(() => readFlag(DOCK_COLLAPSED_KEY, false))
   const lanyinState = useSyncExternalStore(lanyin.subscribe, lanyin.getSnapshot)
   const noticeRef = useRef<'done' | 'needs_input' | null>(null)
   const deliveredTaskNotice = useRef<'done' | 'needs_input' | null>(null)
@@ -109,44 +131,54 @@ export function TeahouseApp({ initiallyOpen, preview = false, taskSource, lanyin
   const activeGame = screen.kind === 'game' ? GAME_REGISTRY.find((entry) => entry.manifest.id === screen.gameId) : undefined
   const defaultGame = GAME_REGISTRY.find((entry) => entry.manifest.id === shell.shell.defaultGameId) ?? GAME_REGISTRY[0]
 
-  const services = useMemo<GameServices>(() => {
-    const store: Record<string, unknown> = { ...shell.preferences, ...shell.shell, stats: shell.stats }
-    return {
-      lanyinAvailable: () => lanyin.getSnapshot().modelLive,
-      lanyinRemark: (event, context) => { lanyin.remark(event, context) },
-      playMode: () => shell.shell.playMode,
-      beginAgentGame: (input) => shell.shell.playMode === 'agent' ? lanyin.beginGameAgent(input) : Promise.resolve(false),
-      chooseAgentAction: (input) => shell.shell.playMode === 'agent' ? lanyin.chooseGameAction(input) : Promise.resolve(null),
-      endAgentGame: (summary) => lanyin.endGameAgent(summary),
-      saveState: (state) => {
-        if (activeGame === undefined) return
-        saveSlot(activeGame.manifest.id, state)
-      },
-      loadState: <S,>() => {
-        if (activeGame === undefined) return null
-        return loadSlot(activeGame.manifest.id) as S | null
-      },
-      taskNotice: () => noticeRef.current,
-      clearTaskNotice: task.clear,
-      getPreference: (key) => store[key],
-      setPreferences: (patch) => {
-        Object.assign(store, patch)
-        setShell((previous) => ({ ...previous, preferences: { ...previous.preferences, ...patch } as PlayerPreferences }))
-      },
-      reportMatchResult: ({ won, draw }) => {
-        setShell((previous) => ({
-          ...previous,
-          stats: {
-            ...previous.stats,
-            matchesPlayed: previous.stats.matchesPlayed + 1,
-            matchesWon: previous.stats.matchesWon + (won && !draw ? 1 : 0),
-            handsPlayed: previous.stats.handsPlayed + 1,
-            rapport: Math.min(100, previous.stats.rapport + (won ? 3 : 2)),
-          },
-        }))
-      },
-    }
-  }, [activeGame, lanyin, shell.preferences, shell.shell, shell.stats, task.clear])
+  // `services` must keep a stable identity: games put it in effect dependency
+  // arrays, and a fresh object on every shell render restarts their turn logic.
+  const activeGameRef = useRef(activeGame)
+  activeGameRef.current = activeGame
+  const shellRef = useRef(shell)
+  shellRef.current = shell
+  const taskClearRef = useRef(task.clear)
+  taskClearRef.current = task.clear
+  const prefStoreRef = useRef<Record<string, unknown>>({})
+  prefStoreRef.current = { ...shell.preferences, ...shell.shell, stats: shell.stats }
+
+  const services = useMemo<GameServices>(() => ({
+    lanyinAvailable: () => lanyin.getSnapshot().modelLive,
+    lanyinRemark: (event, context) => { lanyin.remark(event, context) },
+    playMode: () => shellRef.current.shell.playMode,
+    beginAgentGame: (input) => shellRef.current.shell.playMode === 'agent' ? lanyin.beginGameAgent(input) : Promise.resolve(false),
+    chooseAgentAction: (input) => shellRef.current.shell.playMode === 'agent' ? lanyin.chooseGameAction(input) : Promise.resolve(null),
+    endAgentGame: (summary) => lanyin.endGameAgent(summary),
+    saveState: (state) => {
+      const game = activeGameRef.current
+      if (game === undefined) return
+      saveSlot(game.manifest.id, state)
+    },
+    loadState: <S,>() => {
+      const game = activeGameRef.current
+      if (game === undefined) return null
+      return loadSlot(game.manifest.id) as S | null
+    },
+    taskNotice: () => noticeRef.current,
+    clearTaskNotice: () => { taskClearRef.current() },
+    getPreference: (key) => prefStoreRef.current[key],
+    setPreferences: (patch) => {
+      Object.assign(prefStoreRef.current, patch)
+      setShell((previous) => ({ ...previous, preferences: { ...previous.preferences, ...patch } as PlayerPreferences }))
+    },
+    reportMatchResult: ({ won, draw }) => {
+      setShell((previous) => ({
+        ...previous,
+        stats: {
+          ...previous.stats,
+          matchesPlayed: previous.stats.matchesPlayed + 1,
+          matchesWon: previous.stats.matchesWon + (won && !draw ? 1 : 0),
+          handsPlayed: previous.stats.handsPlayed + 1,
+          rapport: Math.min(100, previous.stats.rapport + (won ? 3 : 2)),
+        },
+      }))
+    },
+  }), [lanyin])
 
   const closeAll = useCallback(() => {
     setOpen(false)
@@ -170,7 +202,7 @@ export function TeahouseApp({ initiallyOpen, preview = false, taskSource, lanyin
   const stats: PlayerStats = shell.stats
 
   return (
-    <div className="dth-root" data-preview={preview ? 'true' : 'false'}>
+    <div className="dth-root" data-preview={preview ? 'true' : 'false'} data-fullscreen={fullscreen ? 'true' : 'false'}>
       <style id={STYLE_ELEMENT_ID}>{TEAHOUSE_STYLES}</style>
 
       {!open && (
@@ -218,6 +250,16 @@ export function TeahouseApp({ initiallyOpen, preview = false, taskSource, lanyin
                 <span className="dth-stats" aria-label="茶歇统计">
                   {stats.matchesPlayed > 0 ? `${stats.matchesPlayed} 局 · 胜 ${stats.matchesWon}` : '第一局还没开张'}
                 </span>
+                <button
+                  type="button"
+                  className="dth-fullscreen-button"
+                  onClick={() => { setFullscreen((v) => { writeFlag(FULLSCREEN_KEY, !v); return !v }) }}
+                  aria-pressed={fullscreen}
+                  aria-label={fullscreen ? '退出全屏' : '茶歇间全屏'}
+                  title={fullscreen ? '退出全屏' : '全屏'}
+                >
+                  {fullscreen ? '⤡' : '⤢'}
+                </button>
                 <button type="button" className="dth-close-button" onClick={closeAll} aria-label="收起茶歇间">—</button>
               </div>
             </header>
@@ -257,7 +299,11 @@ export function TeahouseApp({ initiallyOpen, preview = false, taskSource, lanyin
 
             {shell.shell.lanyinDock && (
               <Suspense fallback={null}>
-                <LanyinDock lanyin={lanyin} />
+                <LanyinDock
+                  lanyin={lanyin}
+                  collapsed={dockCollapsed}
+                  onToggleCollapsed={() => { setDockCollapsed((v) => { writeFlag(DOCK_COLLAPSED_KEY, !v); return !v }) }}
+                />
               </Suspense>
             )}
           </main>

@@ -153,21 +153,36 @@ function useGinRummyGame(services: GameServices) {
   }, [finishMatch])
   const commitMatchRef = useRef(commitMatch)
   commitMatchRef.current = commitMatch
+  const scheduledTurnRef = useRef<string | null>(null)
+
+  const aiTurnKey = match !== null && match.turn === 'lanyin' && match.phase === 'draw'
+    ? `${match.seed}:${match.round}:${match.history.length}`
+    : null
 
   useEffect(() => {
-    if (!documentVisible || match === null || match.turn !== 'lanyin' || match.phase !== 'draw') {
+    if (!documentVisible || match === null || aiTurnKey === null) {
       setAiThinking(false)
+      scheduledTurnRef.current = null
       return
     }
+    // Schedule each Lanyin turn exactly once, keyed by the turn itself. In agent
+    // mode the move costs two sequential model round-trips, and Lanyin's own
+    // chatter re-renders the shell while they are in flight; tearing the turn
+    // down on cleanup would discard a move that was already paid for and strand
+    // aiThinking at true — she would keep talking and never play a card.
+    if (scheduledTurnRef.current === aiTurnKey) return
+    scheduledTurnRef.current = aiTurnKey
     setAiThinking(true)
-    let cancelled = false
     const turnServices = servicesRef.current
     const turnPreferences = preferencesRef.current
     const timer = window.setTimeout(async () => {
-      if (document.visibilityState === 'hidden') return
+      if (document.visibilityState === 'hidden') {
+        setAiThinking(false)
+        scheduledTurnRef.current = null
+        return
+      }
       try {
         const agentMove = turnServices.playMode() === 'agent' ? await playAgentTurn(match, turnServices).catch(() => null) : null
-        if (cancelled) return
         const next = agentMove?.next ?? playAiTurn(match, turnPreferences.difficulty)
         commitMatchRef.current(next)
         setSelectedCardId(null)
@@ -180,19 +195,19 @@ function useGinRummyGame(services: GameServices) {
           const last = next.history.slice(match.history.length).at(-1)
           if (last?.type === 'gin') speakRef.current('ai_gin')
           else if (last?.type === 'knock') speakRef.current('ai_knock')
+          else if (last?.type === 'take_discard') speakRef.current('ai_take_discard')
         }
       } catch (cause) {
+        scheduledTurnRef.current = null
         setError(cause instanceof Error ? cause.message : '澜音暂时没接住这手牌。')
       } finally {
-        if (!cancelled) setAiThinking(false)
+        setAiThinking(false)
       }
     }, turnPreferences.fastAi ? 120 : 560)
     return () => {
-      cancelled = true
       window.clearTimeout(timer)
-      setAiThinking(false)
     }
-  }, [match, documentVisible])
+  }, [aiTurnKey, documentVisible, match])
 
   const startMatch = useCallback(() => {
     const next = createMatch()

@@ -129,7 +129,7 @@ export const TEAHOUSE_STYLES = String.raw`
   position: relative;
   display: flex;
   flex-direction: column;
-  width: min(100%, 74rem);
+  width: min(100%, 92rem);
   min-height: min(44rem, calc(100dvh - 1rem));
   max-height: calc(100dvh - 1rem);
   margin: clamp(0.4rem, 2.4vh, 1.6rem) clamp(0.4rem, 2vw, 1.6rem);
@@ -649,6 +649,30 @@ export const TEAHOUSE_STYLES = String.raw`
   background: #071014;
 }
 
+.dth-root[data-fullscreen="true"] .dth-shell {
+  width: 100%;
+  min-height: 100dvh;
+  max-height: 100dvh;
+  margin: 0;
+  border: none;
+  border-radius: 0;
+}
+
+.dth-dock--collapsed { flex: 0 0 auto; max-height: none; }
+.dth-dock-collapse { font-size: 0.8rem; line-height: 1; }
+
+.dth-fullscreen-button {
+  border: 1px solid var(--dth-line);
+  background: var(--dth-panel-soft);
+  color: var(--dth-muted);
+  width: 1.9rem; height: 1.9rem;
+  border-radius: 0.6rem;
+  font-size: 0.85rem; line-height: 1;
+  cursor: pointer;
+  transition: border-color 120ms ease, color 120ms ease;
+}
+.dth-fullscreen-button:hover { border-color: var(--dth-teal); color: var(--dth-text); }
+
 .dth-shell::before {
   content: "";
   position: absolute;
@@ -694,7 +718,18 @@ export const TEAHOUSE_STYLES = String.raw`
 }
 
 .dth-body { min-height: 0; overflow-y: auto; padding: 1.2rem 1.35rem 1.45rem; }
-.dth-body--game { padding: 0; }
+.dth-body--game { padding: 0; overflow: hidden; display: flex; flex-direction: column; }
+
+.dth-body--game > .dwc-root { flex: 1 1 auto; min-height: 0; }
+.dwc-root.dwc-game { display: flex; flex-direction: column; }
+.dwc-root.dwc-game > .dwc-table,
+.dwc-root.dwc-game > .dwc-welcome,
+.dwc-root.dwc-game > .dwc-result { flex: 1 1 auto; min-height: 0; }
+
+@media (max-height: 620px) {
+  .dth-body--game { overflow-y: auto; }
+  .dth-body--game > .dwc-root { min-height: 30rem; }
+}
 
 .dth-kicker {
   display: inline-block;
