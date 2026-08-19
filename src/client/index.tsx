@@ -1,7 +1,19 @@
+/**
+ * Browser entry: mounts the teahouse into DSH Web.
+ *
+ * Cordis owns teardown through the effect scope. The Lanyin service binds to
+ * the Host RPC bridge when the connection service is present and degrades to
+ * local lines otherwise (standalone preview, bridge down).
+ *
+ * @module client/index
+ */
+
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
-import { createElement } from 'react'
+import { createElement, Suspense } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { GameApp } from '../ui/GameApp.tsx'
+import { TeahouseApp } from '../teahouse/TeahouseApp.tsx'
+import { LanyinService } from '../teahouse/lanyin/service.ts'
+import { teahouseCallerFromContext } from '../teahouse/rpc-client.ts'
 import type { TaskListSource } from '../ui/task-status.ts'
 
 export type ClientCleanup = () => void
@@ -10,9 +22,10 @@ export interface MountOptions {
   readonly initiallyOpen?: boolean
   readonly preview?: boolean
   readonly taskSource?: TaskListSource
+  readonly lanyin?: LanyinService
 }
 
-export const inject = ['sessions']
+export const inject = ['sessions', 'connection']
 export const HOST_ID = 'dsh-whale-cards-host'
 export const MOUNT_ID = 'dsh-whale-cards-root'
 
@@ -41,13 +54,13 @@ const SHADOW_BASE_STYLES = `
     pointer-events: none;
   }
 
-  .dwc-launcher,
-  .dwc-overlay {
+  .dth-launcher,
+  .dth-overlay {
     pointer-events: auto;
   }
 `
 
-/** Mounts the game in an isolated shadow tree and returns its full disposer. */
+/** Mounts the teahouse in an isolated shadow tree and returns its full disposer. */
 export function mountGame(parent: HTMLElement, options: MountOptions = {}): ClientCleanup {
   const host = document.createElement('div')
   host.id = HOST_ID
@@ -61,16 +74,19 @@ export function mountGame(parent: HTMLElement, options: MountOptions = {}): Clie
   shadow.append(styles, mount)
   parent.append(host)
 
+  const lanyin = options.lanyin ?? new LanyinService(null)
   const root: Root = createRoot(mount)
-  root.render(createElement(GameApp, options))
+  root.render(createElement(Suspense, { fallback: null },
+    createElement(TeahouseApp, { ...options, lanyin })))
 
   return () => {
     root.unmount()
+    lanyin.dispose()
     host.remove()
   }
 }
 
-/** Projects the DSH session-list store onto the small task feed the game uses. */
+/** Projects the DSH session-list store onto the small task feed the teahouse uses. */
 function taskSourceFrom(ctx: ClientContext): TaskListSource {
   return {
     getSnapshot() {
@@ -88,11 +104,13 @@ function taskSourceFrom(ctx: ClientContext): TaskListSource {
 
 /** Browser plugin entry point. Cordis owns teardown through the effect scope. */
 export function apply(ctx: ClientContext): void {
+  const lanyin = new LanyinService(teahouseCallerFromContext(ctx))
   ctx.effect(
     () => mountGame(document.body, {
       initiallyOpen: false,
       preview: false,
       taskSource: taskSourceFrom(ctx),
+      lanyin,
     }),
     'dsh-whale-cards: shadow mount',
   )

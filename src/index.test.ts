@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { apply } from './index.ts'
+import { TEAHOUSE_CHANNEL } from './teahouse/types.ts'
 
 describe('host plugin', () => {
-  it('has an inert apply entry point', () => {
-    expect(apply()).toBeUndefined()
+  it('declares the teahouse RPC channel id', () => {
+    expect(TEAHOUSE_CHANNEL).toBe('/teahouse')
   })
 })
 

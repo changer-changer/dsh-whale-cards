@@ -4,3 +4,4 @@ coverage/
 src/client/generated/
 *.tgz
 .DS_Store
+.jspace/

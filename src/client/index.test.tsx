@@ -10,13 +10,13 @@ import {
   type MountOptions,
 } from './index.tsx'
 
-vi.mock('../ui/GameApp.tsx', () => ({
-  GameApp: ({ initiallyOpen, preview, taskSource }: MountOptions): ReactNode => (
+vi.mock('../teahouse/TeahouseApp.tsx', () => ({
+  TeahouseApp: ({ initiallyOpen, preview, taskSource }: MountOptions): ReactNode => (
     <div
       data-current-task={taskSource?.getSnapshot().current ?? ''}
       data-initially-open={String(initiallyOpen)}
       data-preview={String(preview)}
-      data-testid="game-app"
+      data-testid="teahouse-app"
     />
   ),
 }))
@@ -57,11 +57,11 @@ afterEach(() => {
 })
 
 describe('client plugin lifecycle', () => {
-  it('declares the sessions service dependency', () => {
-    expect(inject).toEqual(['sessions'])
+  it('declares the sessions and connection service dependencies', () => {
+    expect(inject).toEqual(['sessions', 'connection'])
   })
 
-  it('mounts GameApp in a shadow root and removes it on cleanup', () => {
+  it('mounts TeahouseApp in a shadow root and removes it on cleanup', () => {
     const harness = createHarness()
 
     act(() => apply(harness.context))
@@ -69,18 +69,28 @@ describe('client plugin lifecycle', () => {
     const host = document.getElementById(HOST_ID)
     const mount = host?.shadowRoot?.getElementById(MOUNT_ID)
     const boundaryStyles = host?.shadowRoot?.querySelector('style')
-    const app = mount?.querySelector<HTMLElement>('[data-testid="game-app"]')
+    const app = mount?.querySelector<HTMLElement>('[data-testid="teahouse-app"]')
     expect(host?.getAttribute('data-plugin')).toBe('dsh-whale-cards')
     expect(host?.shadowRoot).not.toBeNull()
     expect(app?.dataset.currentTask).toBe('task-1')
     expect(app?.dataset.initiallyOpen).toBe('false')
     expect(app?.dataset.preview).toBe('false')
-    expect(boundaryStyles?.textContent).toContain('.dwc-launcher')
+    expect(boundaryStyles?.textContent).toContain('.dth-launcher')
     expect(boundaryStyles?.textContent).toContain('pointer-events: auto')
     expect(harness.labels).toEqual(['dsh-whale-cards: shadow mount'])
 
     expect(harness.cleanups).toHaveLength(1)
     act(() => harness.cleanups[0]?.())
     expect(document.getElementById(HOST_ID)).toBeNull()
+  })
+
+  it('degrades Lanyin to local lines when no connection service exists', () => {
+    const harness = createHarness()
+    const contextWithoutConnection = { ...harness.context } as Parameters<typeof apply>[0]
+
+    expect(() => act(() => apply(contextWithoutConnection))).not.toThrow()
+    expect(document.getElementById(HOST_ID)).not.toBeNull()
+
+    act(() => harness.cleanups[0]?.())
   })
 })
